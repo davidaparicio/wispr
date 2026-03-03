@@ -14,19 +14,28 @@ Wispr runs entirely on-device — your audio never leaves your Mac.
 - **Onboarding flow** — guided setup for permissions, model selection, and a test dictation
 - **Accessibility-first** — full keyboard navigation, VoiceOver support, and high-contrast mode
 
-## Requirements
+## Installation
 
-- macOS 15.0+
-- Xcode 16+
-- Microphone permission
-- Accessibility permission (for text insertion)
+### Homebrew (Recommended)
 
-## Getting Started
+```bash
+brew tap sebsto/macos
+brew install wispr
+```
+
+### Building from Source
+
+Requires macOS 15.0+ and Xcode 16+
 
 1. Clone the repo
 2. Open `wispr.xcodeproj` in Xcode
 3. Build and run (⌘R)
 4. Follow the onboarding flow to grant permissions and download a model
+
+## Requirements
+
+- macOS 15.0+
+- Microphone permission
 
 ## Architecture
 

@@ -18,7 +18,7 @@ API_KEY_ID     := $(shell jq -r .apple_api_key_id $(CURDIR)/secrets/asc-api-key.
 API_ISSUER     := $(shell jq -r .apple_api_issuer_id $(CURDIR)/secrets/asc-api-key.json 2>/dev/null)
 API_KEY_PATH   := $(API_KEYS_DIR)/AuthKey_$(API_KEY_ID).p8
 
-.PHONY: help bump-build archive upload list-downloads clean-downloads list-container list-prefs clean-prefs reset-permissions reset-login-item reset-onboarding
+.PHONY: help bump-build archive upload brew-release brew-clean list-downloads clean-downloads list-container list-prefs clean-prefs reset-permissions reset-login-item reset-onboarding
 
 _setup-api-key:
 	@test -f "$(SECRETS_JSON)" || { echo "Error: $(SECRETS_JSON) not found"; exit 1; }
@@ -47,6 +47,64 @@ upload: archive _setup-api-key ## Archive and upload to App Store Connect
 		-authenticationKeyID $(API_KEY_ID) \
 		-authenticationKeyIssuerID $(API_ISSUER) | xcbeautify
 	@$(MAKE) _cleanup-api-key
+
+brew-clean: ## Clean up existing release tags and GitHub release (usage: make brew-clean VERSION=1.0.0)
+	@test -n "$(VERSION)" || { echo "Usage: make brew-clean VERSION=1.0.0"; exit 1; }
+	$(eval TAG := v$(VERSION))
+	@echo "🧹 Cleaning up release $(TAG)..."
+	@git tag -d $(TAG) 2>/dev/null || true
+	@git push --no-verify --delete origin $(TAG) 2>/dev/null || true
+	@gh release delete $(TAG) --yes 2>/dev/null || true
+	@echo "✅ Cleanup complete"
+
+brew-release: ## Create Homebrew cask release (usage: make brew-release VERSION=1.0.0)
+	@test -n "$(VERSION)" || { echo "Usage: make brew-release VERSION=1.0.0"; exit 1; }
+	@test -d "../homebrew-macos" || { echo "Error: ../homebrew-macos not found"; exit 1; }
+	@command -v gh >/dev/null || { echo "Error: gh CLI not installed"; exit 1; }
+	$(eval TAG := v$(VERSION))
+	$(eval APP_NAME := Wispr.app)
+	$(eval ZIP_NAME := wispr-$(VERSION).zip)
+	$(eval BUILD_NUM := $(shell git rev-list --count HEAD))
+	@echo "📝 Setting version to $(VERSION) (build $(BUILD_NUM))..."
+	@xcrun agvtool new-marketing-version $(VERSION) > /dev/null
+	@xcrun agvtool new-version -all $(BUILD_NUM) > /dev/null
+	@echo "🏗️  Building Release archive..."
+	@xcodebuild -project $(XCODEPROJ) -scheme $(SCHEME) -configuration Release \
+		-archivePath $(ARCHIVE_PATH) \
+		DEVELOPMENT_TEAM=56U756R2L2 \
+		archive | xcbeautify
+	@echo "📦 Exporting app..."
+	@xcodebuild -exportArchive -archivePath $(ARCHIVE_PATH) \
+		-exportPath $(EXPORT_DIR) -exportOptionsPlist ExportOptionsHomebrew.plist | xcbeautify
+	@echo "🗜️  Creating zip..."
+	@cd $(EXPORT_DIR) && zip -r -X $(ZIP_NAME) $(APP_NAME)
+	@echo "🏷️  Creating GitHub release..."
+	@git tag $(TAG) || true
+	@git push --no-verify origin $(TAG) || true
+	@gh release create $(TAG) --generate-notes $(EXPORT_DIR)/$(ZIP_NAME) || \
+		gh release upload $(TAG) $(EXPORT_DIR)/$(ZIP_NAME)
+	$(eval URL := https://github.com/sebsto/wispr/releases/download/$(TAG)/$(ZIP_NAME))
+	@echo "🍺 Generating cask..."
+	@echo "cask \"wispr\" do" > wispr.rb
+	@echo "  version \"$(VERSION)\"" >> wispr.rb
+	@echo "  sha256 \"$$(shasum -a 256 $(EXPORT_DIR)/$(ZIP_NAME) | awk '{print $$1}')\"" >> wispr.rb
+	@echo "" >> wispr.rb
+	@echo "  url \"$(URL)\"" >> wispr.rb
+	@echo "  name \"Wispr\"" >> wispr.rb
+	@echo "  desc \"Local speech-to-text transcription powered by OpenAI Whisper\"" >> wispr.rb
+	@echo "  homepage \"https://github.com/sebsto/wispr\"" >> wispr.rb
+	@echo "" >> wispr.rb
+	@echo "  app \"Wispr.app\"" >> wispr.rb
+	@echo "end" >> wispr.rb
+	@echo "📦 Updating homebrew tap..."
+	@cd ../homebrew-macos && git pull --rebase origin main
+	@mkdir -p ../homebrew-macos/Casks
+	@cp wispr.rb ../homebrew-macos/Casks/
+	@cd ../homebrew-macos && git add Casks/wispr.rb && \
+		git commit -m "Update wispr to $(VERSION)" && \
+		git push --no-verify origin main
+	@rm -f wispr.rb
+	@echo "✅ Release $(VERSION) complete!"
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \

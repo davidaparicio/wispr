@@ -58,8 +58,9 @@ upload: archive _setup-api-key ## Archive and upload to App Store Connect
 
 notarize: archive _setup-api-key ## Archive, sign, notarize, and staple the app
 	@test -f "$(NOTARIZATION_JSON)" || { echo "Error: $(NOTARIZATION_JSON) not found"; exit 1; }
+	@rm -rf "$(EXPORT_DIR)"
 	@mkdir -p "$(EXPORT_DIR)"
-	@cp -R "$(ARCHIVE_PATH)/Products/Applications/wispr.app" "$(APP_PATH)"
+	@ditto "$(ARCHIVE_PATH)/Products/Applications/wispr.app" "$(APP_PATH)"
 	@echo "🔐 Signing app..."
 	@codesign --deep --force --verify --verbose \
 		--sign "$(SIGNING_IDENTITY)" \

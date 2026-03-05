@@ -329,9 +329,12 @@ document.addEventListener('keydown', (e) => {
 
 // Add loading animation
 window.addEventListener('load', () => {
-    document.body.style.opacity = '0';
-    document.body.style.transition = 'opacity 0.5s ease';
-    setTimeout(() => {
-        document.body.style.opacity = '1';
-    }, 100);
+    const computedOpacity = window.getComputedStyle(document.body).opacity;
+    // Only apply fade-in if the body was initially hidden via CSS (opacity 0)
+    if (computedOpacity === '0') {
+        document.body.style.transition = 'opacity 0.5s ease';
+        window.requestAnimationFrame(() => {
+            document.body.style.opacity = '1';
+        });
+    }
 });

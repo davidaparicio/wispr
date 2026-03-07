@@ -39,13 +39,16 @@ private func createTestController(
 
     let themeEngine = UIThemeEngine()
 
+    let updateChecker = UpdateChecker(currentVersion: "1.0.0", httpProvider: URLSession.shared)
+
     let controller = MenuBarController(
         stateManager: stateManager,
         settingsStore: settingsStore,
         themeEngine: themeEngine,
         audioEngine: audioEngine,
         whisperService: whisperService,
-        permissionManager: permissionManager
+        permissionManager: permissionManager,
+        updateChecker: updateChecker
     )
 
     return (controller, stateManager, settingsStore, themeEngine)

@@ -13,10 +13,16 @@ enum ModelProvider: String, Sendable, Equatable, Hashable, CaseIterable {
     case whisper = "OpenAI Whisper"
     case nvidiaParakeet = "NVIDIA Parakeet"
 
+    /// Centralized SF Symbol names for model providers.
+    private enum IconNames {
+        static let whisper = "waveform"
+        static let nvidiaParakeet = "bird"
+    }
+
     var icon: String {
         switch self {
-        case .whisper: "waveform"
-        case .nvidiaParakeet: "bird"
+        case .whisper: IconNames.whisper
+        case .nvidiaParakeet: IconNames.nvidiaParakeet
         }
     }
 

@@ -57,7 +57,7 @@ final class UpdateChecker {
             let downloadURL = zipAsset.flatMap { URL(string: $0.browserDownloadURL) }
 
             guard let downloadURL else {
-                Log.app.debug("UpdateChecker — no .zip asset found for \(release.tagName)")
+                Log.app.debug("UpdateChecker — no valid .zip download URL found for \(release.tagName)")
                 return
             }
 

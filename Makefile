@@ -5,6 +5,7 @@
 BUNDLE_ID    := com.stormacq.mac.wispr
 CONTAINER    := $(HOME)/Library/Containers/$(BUNDLE_ID)/Data
 MODEL_DIR    := $(CONTAINER)/Library/Application Support/wispr
+PARAKEET_DIR := $(HOME)/Library/Application Support/FluidAudio
 
 SCHEME       := wispr
 XCODEPROJ    := wispr.xcodeproj
@@ -148,11 +149,10 @@ list-downloads: ## List all downloaded models (Whisper + Parakeet) in the sandbo
 
 clean-downloads: ## Delete all downloaded models (Whisper + Parakeet) from the sandbox container
 	@if [ -d "$(MODEL_DIR)" ]; then \
-		echo "Removing $(MODEL_DIR) …"; \
+		echo "Removing Whisper models at $(MODEL_DIR) …"; \
 		rm -rf "$(MODEL_DIR)"; \
-		echo "Done."; \
 	else \
-		echo "Nothing to clean — $(MODEL_DIR) does not exist."; \
+		echo "No Whisper models to clean."; \
 	fi
 	@# Clean legacy FluidAudio location in case models were downloaded before unification
 	@if [ -d "$(CONTAINER)/Library/Application Support/FluidAudio" ]; then \

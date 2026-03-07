@@ -37,6 +37,11 @@ struct ModelInfo: Identifiable, Sendable, Equatable {
     let estimatedSize: Int64    // bytes, used for download progress
     var status: ModelStatus
 
+    /// The provider that owns this model, derived from the model ID.
+    var provider: ModelProvider {
+        id.hasPrefix("parakeet") ? .nvidiaParakeet : .whisper
+    }
+
     // MARK: - Known Model IDs
 
     enum KnownID {

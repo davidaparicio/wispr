@@ -198,7 +198,6 @@ extension ParakeetService: TranscriptionEngine {
             ModelInfo(
                 id: Self.modelId,
                 displayName: "Parakeet V3",
-                provider: .nvidiaParakeet,
                 sizeDescription: "~400 MB",
                 qualityDescription: "Fast, high accuracy, multilingual (25 languages)",
                 estimatedSize: 400 * 1024 * 1024,
@@ -207,7 +206,6 @@ extension ParakeetService: TranscriptionEngine {
             ModelInfo(
                 id: Self.eouModelId,
                 displayName: "Realtime 120M",
-                provider: .nvidiaParakeet,
                 sizeDescription: "~150 MB",
                 qualityDescription: "Low-latency streaming with end-of-utterance detection (English only)",
                 estimatedSize: 150 * 1024 * 1024,

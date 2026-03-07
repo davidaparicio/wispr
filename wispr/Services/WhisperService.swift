@@ -79,7 +79,6 @@ actor WhisperService {
             ModelInfo(
                 id: ModelInfo.KnownID.tiny,
                 displayName: "Tiny",
-                provider: .whisper,
                 sizeDescription: "~75 MB",
                 qualityDescription: "Fastest, lower accuracy",
                 estimatedSize: 75 * 1024 * 1024,
@@ -88,7 +87,6 @@ actor WhisperService {
             ModelInfo(
                 id: ModelInfo.KnownID.base,
                 displayName: "Base",
-                provider: .whisper,
                 sizeDescription: "~140 MB",
                 qualityDescription: "Fast, moderate accuracy",
                 estimatedSize: 140 * 1024 * 1024,
@@ -97,7 +95,6 @@ actor WhisperService {
             ModelInfo(
                 id: ModelInfo.KnownID.small,
                 displayName: "Small",
-                provider: .whisper,
                 sizeDescription: "~460 MB",
                 qualityDescription: "Balanced speed and accuracy",
                 estimatedSize: 460 * 1024 * 1024,
@@ -106,7 +103,6 @@ actor WhisperService {
             ModelInfo(
                 id: ModelInfo.KnownID.medium,
                 displayName: "Medium",
-                provider: .whisper,
                 sizeDescription: "~1.5 GB",
                 qualityDescription: "Slower, high accuracy",
                 estimatedSize: 1536 * 1024 * 1024,
@@ -115,7 +111,6 @@ actor WhisperService {
             ModelInfo(
                 id: ModelInfo.KnownID.largeV3,
                 displayName: "Large v3",
-                provider: .whisper,
                 sizeDescription: "~3 GB",
                 qualityDescription: "Slowest, highest accuracy",
                 estimatedSize: 3072 * 1024 * 1024,

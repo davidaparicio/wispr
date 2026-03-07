@@ -89,6 +89,10 @@ enum PreviewMocks {
                   qualityDescription: "Slower, high accuracy", estimatedSize: 1536 * 1024 * 1024, status: .downloading(progress: 0.45)),
         ModelInfo(id: ModelInfo.KnownID.largeV3, displayName: "Large v3", sizeDescription: "~3 GB",
                   qualityDescription: "Slowest, highest accuracy", estimatedSize: 3072 * 1024 * 1024, status: .notDownloaded),
+        ModelInfo(id: ModelInfo.KnownID.parakeetV3, displayName: "Parakeet V3", sizeDescription: "~400 MB",
+                  qualityDescription: "Fast, high accuracy, multilingual", estimatedSize: 400 * 1024 * 1024, status: .notDownloaded),
+        ModelInfo(id: ModelInfo.KnownID.parakeetEou, displayName: "Realtime 120M", sizeDescription: "~150 MB",
+                  qualityDescription: "Low-latency streaming (English only)", estimatedSize: 150 * 1024 * 1024, status: .notDownloaded),
     ]
 }
 

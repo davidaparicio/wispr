@@ -38,4 +38,33 @@ enum ModelPaths {
         }
         return appSupport.appendingPathComponent("wispr", isDirectory: true)
     }
+
+    /// The `models/` subdirectory under the base path.
+    nonisolated static var models: URL {
+        base.appendingPathComponent("models", isDirectory: true)
+    }
+
+    /// WhisperKit model repository: `<base>/models/argmaxinc/whisperkit-coreml/`
+    nonisolated static var whisperModels: URL {
+        models
+            .appendingPathComponent("argmaxinc", isDirectory: true)
+            .appendingPathComponent("whisperkit-coreml", isDirectory: true)
+    }
+
+    /// Parakeet V3 cache directory. Pass `AsrModels.defaultCacheDirectory(for: .v3).lastPathComponent` as sdkLeafName.
+    nonisolated static func parakeetV3(sdkLeafName: String) -> URL {
+        models.appendingPathComponent(sdkLeafName, isDirectory: true)
+    }
+
+    /// Parakeet EOU cache directory: `<base>/models/parakeet-eou-streaming/160ms/`
+    nonisolated static var parakeetEou: URL {
+        models
+            .appendingPathComponent("parakeet-eou-streaming", isDirectory: true)
+            .appendingPathComponent("160ms", isDirectory: true)
+    }
+
+    /// Parent directory for EOU model downloads.
+    nonisolated static var parakeetEouParent: URL {
+        models
+    }
 }

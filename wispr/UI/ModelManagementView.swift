@@ -14,8 +14,8 @@ import SwiftUI
 extension ModelProvider {
     var icon: String {
         switch self {
-        case .whisper: "waveform"
-        case .nvidiaParakeet: "bird"
+        case .whisper: SFSymbols.providerWhisper
+        case .nvidiaParakeet: SFSymbols.providerParakeet
         }
     }
 

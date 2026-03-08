@@ -37,22 +37,21 @@ struct OnboardingModelSelectionStep: View {
                 color: downloadComplete ? theme.successColor : theme.accentColor
             )
 
-            Text("Downloading Model")
+            Text(downloadComplete ? "Model Ready" : "Downloading Model")
                 .font(.title2)
                 .fontWeight(.semibold)
                 .foregroundStyle(theme.primaryTextColor)
 
-            Text("We're downloading NVIDIA Parakeet V3, a fast and accurate speech recognition model. You can switch to a different model anytime in Model Management.")
+            Text(downloadComplete
+                ? "NVIDIA Parakeet V3 is ready to use. You can switch to a different model anytime in Model Management."
+                : "We're downloading NVIDIA Parakeet V3, a fast and accurate speech recognition model. You can switch to a different model anytime in Model Management.")
                 .font(.body)
                 .foregroundStyle(theme.secondaryTextColor)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 420)
                 .lineSpacing(5)
 
-            if downloadComplete {
-                completionView
-                    .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .center)))
-            } else if let errorMessage {
+            if let errorMessage {
                 errorView(message: errorMessage)
             } else if let parakeetModel {
                 ModelDownloadProgressView(
@@ -66,6 +65,10 @@ struct OnboardingModelSelectionStep: View {
                     onCancel: nil
                 )
                 .frame(maxWidth: 400)
+            } else if downloadComplete {
+                // Model was already downloaded before this view appeared;
+                // no ModelDownloadProgressView needed.
+                alreadyReadyView
             } else {
                 ProgressView()
                     .controlSize(.regular)
@@ -80,11 +83,13 @@ struct OnboardingModelSelectionStep: View {
         .accessibilityLabel("Model Download step")
     }
 
-    // MARK: - Completion
+    // MARK: - Already Ready (model was downloaded before onboarding)
 
-    private var completionView: some View {
+    /// Shown only when `resolveParakeetModel` finds the model already downloaded/active,
+    /// so no `ModelDownloadProgressView` was ever created.
+    private var alreadyReadyView: some View {
         HStack(spacing: 10) {
-            Image(systemName: "checkmark")
+            Image(systemName: SFSymbols.checkmarkPlain)
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(width: 28, height: 28)

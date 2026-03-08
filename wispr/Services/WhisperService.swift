@@ -40,20 +40,10 @@ actor WhisperService {
     /// Stores true when a model is being downloaded (for concurrent download prevention)
     private var downloadTasks: [String: Bool] = [:]
     
-    /// Base directory for model downloads.
-    /// WhisperKit / HubApi stores models under this path as:
-    ///   `<downloadBase>/models/argmaxinc/whisperkit-coreml/<variant>/`
-    ///
-    /// Uses the shared `ModelPaths.base` so all engines store models
-    /// under the same Application Support directory.
-    private var modelDownloadBase: URL {
-        ModelPaths.base
-    }
-    
-    /// Ensures the `modelDownloadBase` directory exists on disk.
+    /// Ensures the `ModelPaths.base` directory exists on disk.
     /// Called before any download or model-status query that needs the path.
     private func ensureModelDirectoryExists() throws {
-        let base = modelDownloadBase
+        let base = ModelPaths.base
         if !FileManager.default.fileExists(atPath: base.path) {
             try FileManager.default.createDirectory(
                 at: base,
@@ -161,7 +151,7 @@ actor WhisperService {
                 // Step 1: Download model files with real progress via WhisperKit's static API
                 let modelFolder = try await WhisperKit.download(
                     variant: model.id,
-                    downloadBase: self.modelDownloadBase,
+                    downloadBase: ModelPaths.base,
                     progressCallback: { progress in
                         let fraction = progress.fractionCompleted
                         let downloaded = Int64(Double(totalBytes) * fraction)
@@ -272,10 +262,7 @@ actor WhisperService {
     /// (e.g. `openai_whisper-large-v3`), so we scan for a directory
     /// whose name contains the model id.
     private func getModelPath(for modelName: String) throws -> URL {
-        let repoDir = modelDownloadBase
-            .appendingPathComponent("models", isDirectory: true)
-            .appendingPathComponent("argmaxinc", isDirectory: true)
-            .appendingPathComponent("whisperkit-coreml", isDirectory: true)
+        let repoDir = ModelPaths.whisperModels
         
         let fm = FileManager.default
         guard fm.fileExists(atPath: repoDir.path) else {
@@ -295,7 +282,7 @@ actor WhisperService {
     ///
     /// Requirement 7.6: Load a downloaded model and make it ready for transcription.
     ///
-    /// Uses the app's `modelDownloadBase` so WhisperKit finds the previously
+    /// Uses the app's `ModelPaths.base` so WhisperKit finds the previously
     /// downloaded files instead of re-downloading.
     ///
     /// - Parameter modelName: The name of the model to load
@@ -305,7 +292,7 @@ actor WhisperService {
         do {
             let config = WhisperKitConfig(
                 model: modelName,
-                downloadBase: modelDownloadBase,
+                downloadBase: ModelPaths.base,
                 prewarm: true
             )
             whisperKit = try await WhisperKit(config)
@@ -506,7 +493,7 @@ actor WhisperService {
                 whisperKit = nil
                 let config = WhisperKitConfig(
                     model: modelName,
-                    downloadBase: modelDownloadBase,
+                    downloadBase: ModelPaths.base,
                     prewarm: true
                 )
                 whisperKit = try await WhisperKit(config)

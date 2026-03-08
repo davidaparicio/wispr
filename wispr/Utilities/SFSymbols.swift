@@ -126,4 +126,12 @@ enum SFSymbols {
 
     /// X-mark circle for denied/error states.
     static let denied = "xmark.circle"
+
+    // MARK: - Provider Icons
+
+    /// Icon representing the OpenAI Whisper provider.
+    static let providerWhisper = "waveform"
+
+    /// Icon representing the NVIDIA Parakeet provider.
+    static let providerParakeet = "bird"
 }

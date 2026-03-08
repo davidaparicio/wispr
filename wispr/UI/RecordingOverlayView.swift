@@ -37,9 +37,6 @@ struct RecordingOverlayView: View {
     /// Whether model loading has exceeded the slow-loading threshold (10s).
     @State private var isLoadingSlow: Bool = false
 
-    /// Task that fires after the slow-loading threshold to update the message.
-    @State private var slowLoadingTask: Task<Void, Never>?
-
     /// Scaled overlay width for Dynamic Type support (Req 17.7).
     @ScaledMetric(relativeTo: .body) private var overlayWidth: CGFloat = 240
 
@@ -56,6 +53,16 @@ struct RecordingOverlayView: View {
         .highContrastBorder(cornerRadius: 16)
         .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
         .motionRespectingAnimation(value: stateManager.appState)
+        .task(id: stateManager.appState) {
+            // Reset slow-loading flag on every state change; only re-arm for .loading.
+            isLoadingSlow = false
+            if case .loading = stateManager.appState {
+                try? await Task.sleep(for: .seconds(10))
+                if !Task.isCancelled {
+                    isLoadingSlow = true
+                }
+            }
+        }
         .onAppear {
             handleStateChange(stateManager.appState)
         }
@@ -193,38 +200,13 @@ struct RecordingOverlayView: View {
 
     private func handleStateChange(_ state: AppStateType) {
         switch state {
-        case .loading:
-            stopConsumingAudioLevels()
-            stopGlowAnimation()
-            startSlowLoadingTimer()
         case .recording:
-            cancelSlowLoadingTimer()
             startConsumingAudioLevels()
             startGlowAnimation()
         default:
-            cancelSlowLoadingTimer()
             stopConsumingAudioLevels()
             stopGlowAnimation()
         }
-    }
-
-    // MARK: - Slow Loading Timer
-
-    /// Starts a 10-second timer that flips `isLoadingSlow` to show a reassurance message.
-    private func startSlowLoadingTimer() {
-        cancelSlowLoadingTimer()
-        slowLoadingTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(10))
-            guard !Task.isCancelled else { return }
-            isLoadingSlow = true
-        }
-    }
-
-    /// Cancels the slow-loading timer and resets the flag.
-    private func cancelSlowLoadingTimer() {
-        slowLoadingTask?.cancel()
-        slowLoadingTask = nil
-        isLoadingSlow = false
     }
 
     // MARK: - Audio Level Stream Consumption

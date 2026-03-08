@@ -10,8 +10,9 @@
 
 import SwiftUI
 
-/// Self-contained view that manages a model download lifecycle:
-/// idle → downloading (progress) → complete or error (with retry).
+/// Manages the full download lifecycle: initiation, progress, error/retry, and completion display.
+/// Parent views decide which model to download and handle app-level side effects
+/// (setting active model, navigation) via `onComplete` and `onCancel`.
 struct ModelDownloadProgressView: View {
     @Environment(UIThemeEngine.self) private var theme: UIThemeEngine
 
@@ -49,7 +50,7 @@ struct ModelDownloadProgressView: View {
         model: ModelInfo,
         autoStart: Bool = false,
         onComplete: ((String) -> Void)? = nil,
-        onCancel: (() -> Void)? = nil
+        onCancel: (() -> Void)?
     ) {
         self.whisperService = whisperService
         self.model = model
@@ -387,7 +388,7 @@ private struct DownloadProgressPreview: View {
     }
 
     var body: some View {
-        let sampleModel = PreviewMocks.sampleModels[2] // "Small", .notDownloaded
+        let sampleModel = PreviewMocks.sampleModels.first { $0.id == ModelInfo.KnownID.small }!
         Group {
             switch variant {
             case .progress:

@@ -26,33 +26,12 @@ actor ParakeetService {
     private var downloadTasks: [String: Bool] = [:]
 
     // MARK: - V3 Constants
-    private static let modelId = ModelInfo.KnownID.parakeetV3
     private static let expectedFileCount = 23
 
     // MARK: - EOU Constants
-    private static let eouModelId = ModelInfo.KnownID.parakeetEou
     private static let eouExpectedFileCount = 21
     private static let eouDownloadedKey = "parakeetEouDownloaded"
 
-    // MARK: - Unified Model Storage
-    // Store Parakeet models alongside Whisper models under the shared ModelPaths.base.
-    // Final on-disk layout:
-    //   ~/Library/Application Support/wispr/models/parakeet-tdt-v3/
-    //   ~/Library/Application Support/wispr/models/parakeet-eou-streaming/160ms/
-    private var modelDownloadBase: URL {
-        ModelPaths.base.appendingPathComponent("models", isDirectory: true)
-    }
-
-    /// Cache directory for Parakeet V3 models.
-    ///
-    /// `AsrModels.downloadAndLoad(to:)` expects the leaf directory whose last
-    /// path component matches the SDK's internal repo folder name.  We derive
-    /// that name from `AsrModels.defaultCacheDirectory(for: .v3)` so we stay
-    /// in sync even if the SDK renames the folder in a future release.
-    private func v3CacheDirectory() -> URL {
-        let sdkLeaf = AsrModels.defaultCacheDirectory(for: .v3).lastPathComponent
-        return modelDownloadBase.appendingPathComponent(sdkLeaf, isDirectory: true)
-    }
 
     // MARK: - UserDefaults Flags
     private var isDownloaded: Bool {
@@ -81,7 +60,8 @@ actor ParakeetService {
     // MARK: - V3 Helpers
 
     private func downloadAndLoad() async throws {
-        let models = try await AsrModels.downloadAndLoad(to: v3CacheDirectory(), version: .v3)
+        let sdkLeaf = AsrModels.defaultCacheDirectory(for: .v3).lastPathComponent
+        let models = try await AsrModels.downloadAndLoad(to: ModelPaths.parakeetV3(sdkLeafName: sdkLeaf), version: .v3)
         let manager = AsrManager(config: .default)
         try await manager.initialize(models: models)
         self.asrManager = manager
@@ -92,30 +72,20 @@ actor ParakeetService {
     private func unload() {
         asrManager?.cleanup()
         asrManager = nil
-        if activeModelName == Self.modelId { activeModelName = nil }
+        if activeModelName == ModelInfo.KnownID.parakeetV3 { activeModelName = nil }
         Log.whisperService.debug("ParakeetService — V3 model unloaded")
     }
 
     // MARK: - EOU Helpers
 
-    private func eouCacheDirectory() -> URL {
-        modelDownloadBase
-            .appendingPathComponent("parakeet-eou-streaming", isDirectory: true)
-            .appendingPathComponent("160ms", isDirectory: true)
-    }
-
-    private func eouModelsParentDirectory() -> URL {
-        modelDownloadBase
-    }
 
     private func downloadAndLoadEou() async throws {
-        let cacheDir = eouCacheDirectory()
+        let cacheDir = ModelPaths.parakeetEou
         let cachedFileCount = Self.countFiles(in: cacheDir)
 
         // Only download if the cache is incomplete
         if cachedFileCount < Self.eouExpectedFileCount {
-            let parentDir = eouModelsParentDirectory()
-            try await DownloadUtils.downloadRepo(.parakeetEou160, to: parentDir)
+            try await DownloadUtils.downloadRepo(.parakeetEou160, to: ModelPaths.parakeetEouParent)
         }
         let config = MLModelConfiguration()
         config.computeUnits = .cpuAndNeuralEngine
@@ -132,7 +102,7 @@ actor ParakeetService {
 
     private func unloadEou() {
         eouManager = nil
-        if activeModelName == Self.eouModelId { activeModelName = nil }
+        if activeModelName == ModelInfo.KnownID.parakeetEou { activeModelName = nil }
         Log.whisperService.debug("ParakeetService — EOU model unloaded")
     }
 
@@ -210,7 +180,7 @@ extension ParakeetService: TranscriptionEngine {
     func availableModels() async -> [ModelInfo] {
         [
             ModelInfo(
-                id: Self.modelId,
+                id: ModelInfo.KnownID.parakeetV3,
                 displayName: "Parakeet V3",
                 sizeDescription: "~400 MB",
                 qualityDescription: "Fast, high accuracy, multilingual (25 languages)",
@@ -218,7 +188,7 @@ extension ParakeetService: TranscriptionEngine {
                 status: .notDownloaded
             ),
             ModelInfo(
-                id: Self.eouModelId,
+                id: ModelInfo.KnownID.parakeetEou,
                 displayName: "Realtime 120M",
                 sizeDescription: "~150 MB",
                 qualityDescription: "Low-latency streaming with end-of-utterance detection (English only)",
@@ -238,10 +208,11 @@ extension ParakeetService: TranscriptionEngine {
 
         downloadTasks[model.id] = true
 
-        let isEou = model.id == Self.eouModelId
+        let isEou = model.id == ModelInfo.KnownID.parakeetEou
         let estimatedSize = model.estimatedSize
         let expectedFileCount = isEou ? Self.eouExpectedFileCount : Self.expectedFileCount
-        let cacheDir = isEou ? eouCacheDirectory() : v3CacheDirectory()
+        let sdkLeaf = AsrModels.defaultCacheDirectory(for: .v3).lastPathComponent
+        let cacheDir = isEou ? ModelPaths.parakeetEou : ModelPaths.parakeetV3(sdkLeafName: sdkLeaf)
 
         Task {
             defer { self.downloadTasks.removeValue(forKey: model.id) }
@@ -305,9 +276,9 @@ extension ParakeetService: TranscriptionEngine {
     }
 
     func deleteModel(_ modelName: String) async throws {
-        if modelName == Self.eouModelId {
+        if modelName == ModelInfo.KnownID.parakeetEou {
             unloadEou()
-            let cacheDir = eouCacheDirectory()
+            let cacheDir = ModelPaths.parakeetEou
             if FileManager.default.fileExists(atPath: cacheDir.path) {
                 do {
                     try FileManager.default.removeItem(at: cacheDir)
@@ -320,7 +291,8 @@ extension ParakeetService: TranscriptionEngine {
             isEouDownloaded = false
         } else {
             unload()
-            let cacheDir = v3CacheDirectory()
+            let sdkLeaf = AsrModels.defaultCacheDirectory(for: .v3).lastPathComponent
+            let cacheDir = ModelPaths.parakeetV3(sdkLeafName: sdkLeaf)
             if FileManager.default.fileExists(atPath: cacheDir.path) {
                 do {
                     try FileManager.default.removeItem(at: cacheDir)
@@ -338,20 +310,20 @@ extension ParakeetService: TranscriptionEngine {
     func loadModel(_ modelName: String) async throws {
         Log.whisperService.debug("ParakeetService — loadModel starting for \(modelName)")
         do {
-            if modelName == Self.eouModelId {
+            if modelName == ModelInfo.KnownID.parakeetEou {
                 try await downloadAndLoadEou()
             } else {
                 try await downloadAndLoad()
             }
             activeModelName = modelName
         } catch {
-            let displayName = modelName == Self.eouModelId ? "Parakeet EOU" : "Parakeet V3"
+            let displayName = modelName == ModelInfo.KnownID.parakeetEou ? "Parakeet EOU" : "Parakeet V3"
             throw WisprError.modelLoadFailed("Failed to load \(displayName): \(error.localizedDescription)")
         }
     }
 
     func switchModel(to modelName: String) async throws {
-        if modelName == Self.eouModelId {
+        if modelName == ModelInfo.KnownID.parakeetEou {
             unload()
         } else {
             unloadEou()
@@ -365,7 +337,7 @@ extension ParakeetService: TranscriptionEngine {
     }
 
     func validateModelIntegrity(_ modelName: String) async throws -> Bool {
-        if modelName == Self.eouModelId {
+        if modelName == ModelInfo.KnownID.parakeetEou {
             return eouManager != nil || isEouDownloaded
         }
         return asrManager != nil || isDownloaded
@@ -375,7 +347,7 @@ extension ParakeetService: TranscriptionEngine {
         if downloadTasks[modelName] != nil {
             return .downloading(progress: 0.0)
         }
-        if modelName == Self.eouModelId {
+        if modelName == ModelInfo.KnownID.parakeetEou {
             if modelName == activeModelName, eouManager != nil {
                 return .active
             }
@@ -403,7 +375,7 @@ extension ParakeetService: TranscriptionEngine {
         }
 
         var lastError: Error?
-        let isEou = currentModel == Self.eouModelId
+        let isEou = currentModel == ModelInfo.KnownID.parakeetEou
 
         for attempt in 0..<maxAttempts {
             do {
@@ -434,7 +406,7 @@ extension ParakeetService: TranscriptionEngine {
         _ audioSamples: [Float],
         language: TranscriptionLanguage
     ) async throws -> TranscriptionResult {
-        if activeModelName == Self.eouModelId {
+        if activeModelName == ModelInfo.KnownID.parakeetEou {
             return try await transcribeWithEou(audioSamples)
         }
 
@@ -469,7 +441,7 @@ extension ParakeetService: TranscriptionEngine {
         _ audioStream: AsyncStream<[Float]>,
         language: TranscriptionLanguage
     ) async -> AsyncThrowingStream<TranscriptionResult, Error> {
-        if activeModelName == Self.eouModelId {
+        if activeModelName == ModelInfo.KnownID.parakeetEou {
             return transcribeStreamWithEou(audioStream)
         }
 

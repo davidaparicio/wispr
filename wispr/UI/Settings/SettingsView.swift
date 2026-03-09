@@ -170,7 +170,7 @@ struct SettingsView: View {
             }
         } header: {
             SectionHeader(
-                title: "Whisper Model",
+                title: "Speech recognition Model",
                 systemImage: theme.actionSymbol(.model),
                 tint: .purple
             )

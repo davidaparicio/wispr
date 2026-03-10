@@ -200,6 +200,10 @@ struct SettingsView: View {
                 .onAppear {
                     selectedModelId = settingsStore.activeModelName
                 }
+                .onChange(of: settingsStore.activeModelName) { _, newName in
+                    guard activatingModelId == nil else { return }
+                    selectedModelId = newName
+                }
             }
         } header: {
             SectionHeader(

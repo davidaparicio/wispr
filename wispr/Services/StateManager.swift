@@ -47,6 +47,7 @@ final class StateManager {
     private let hotkeyMonitor: HotkeyMonitor
     private let permissionManager: PermissionManager
     private let settingsStore: SettingsStore
+    private let soundFeedback: SoundFeedbackService
 
     /// Task for auto-dismissing error state after timeout.
     private var errorDismissTask: Task<Void, Never>?
@@ -82,6 +83,7 @@ final class StateManager {
         self.hotkeyMonitor = hotkeyMonitor
         self.permissionManager = permissionManager
         self.settingsStore = settingsStore
+        self.soundFeedback = SoundFeedbackService(settingsStore: settingsStore)
 
         // Sync language from persisted settings
         self.currentLanguage = settingsStore.languageMode
@@ -212,6 +214,8 @@ final class StateManager {
                     userInfo: [.announcement: "Speech ended, processing"]
                 )
 
+                self.soundFeedback.play(.recordingStopped)
+
                 guard !finalResult.text.isEmpty else {
                     await self.resetToIdle()
                     return
@@ -307,6 +311,8 @@ final class StateManager {
         appState = .recording
         errorMessage = nil
 
+        soundFeedback.play(.recordingStarted)
+
         // Requirement 17.3, 17.11: Announce state change to assistive technologies
         NSAccessibility.post(
             element: NSApp as Any,
@@ -364,6 +370,8 @@ final class StateManager {
 
         // Requirement 3.6: Transition to processing
         appState = .processing
+
+        soundFeedback.play(.recordingStopped)
 
         // Requirement 17.3, 17.11: Announce state change to assistive technologies
         NSAccessibility.post(

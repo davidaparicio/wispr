@@ -47,6 +47,7 @@ final class StateManager {
     private let hotkeyMonitor: HotkeyMonitor
     private let permissionManager: PermissionManager
     private let settingsStore: SettingsStore
+    private let soundFeedback: SoundFeedbackService
 
     /// Task for auto-dismissing error state after timeout.
     private var errorDismissTask: Task<Void, Never>?
@@ -82,6 +83,7 @@ final class StateManager {
         self.hotkeyMonitor = hotkeyMonitor
         self.permissionManager = permissionManager
         self.settingsStore = settingsStore
+        self.soundFeedback = SoundFeedbackService(settingsStore: settingsStore)
 
         // Sync language from persisted settings
         self.currentLanguage = settingsStore.languageMode
@@ -212,8 +214,7 @@ final class StateManager {
                     userInfo: [.announcement: "Speech ended, processing"]
                 )
 
-                // Audio feedback so the user knows EOU was detected
-                NSSound(named: "Bottle")?.play()
+                self.soundFeedback.play(.recordingStopped)
 
                 guard !finalResult.text.isEmpty else {
                     await self.resetToIdle()
@@ -310,8 +311,7 @@ final class StateManager {
         appState = .recording
         errorMessage = nil
 
-        // Audio feedback so the user knows recording has started
-        NSSound(named: "Blow")?.play()
+        soundFeedback.play(.recordingStarted)
 
         // Requirement 17.3, 17.11: Announce state change to assistive technologies
         NSAccessibility.post(
@@ -371,8 +371,7 @@ final class StateManager {
         // Requirement 3.6: Transition to processing
         appState = .processing
 
-        // Audio feedback so the user knows recording has stopped
-        NSSound(named: "Bottle")?.play()
+        soundFeedback.play(.recordingStopped)
 
         // Requirement 17.3, 17.11: Announce state change to assistive technologies
         NSAccessibility.post(

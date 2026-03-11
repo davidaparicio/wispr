@@ -77,7 +77,7 @@ struct RecordingOverlayView: View {
         .accessibilityLabel(accessibilityLabelForState)
         .accessibilityHint(
             settingsStore.handsFreeMode
-                ? "Press the hotkey again to stop recording, or wait for auto-stop"
+                ? "Press the hotkey again to stop recording. Recording may also stop automatically, depending on the model."
                 : "Release the hotkey to stop recording"
         )
         .accessibilityAddTraits(.updatesFrequently)

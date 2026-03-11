@@ -165,15 +165,27 @@ actor ParakeetService {
             await manager.reset()
             let startTime = Date()
             do {
+                var eouDetected = false
                 for await chunk in audioStream {
                     try Task.checkCancellation()
                     let buffer = try createPCMBuffer(from: chunk, sampleRate: 16000)
                     _ = try await manager.process(audioBuffer: buffer)
+                    if await manager.eouDetected {
+                        eouDetected = true
+                        break
+                    }
                 }
                 let finalText = try await manager.finish()
                 let trimmed = finalText.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty {
-                    continuation.yield(TranscriptionResult(text: trimmed, detectedLanguage: nil, duration: Date().timeIntervalSince(startTime)))
+                // Always yield when EOU was detected, even if text is empty,
+                // so StateManager can auto-stop recording and reset to idle.
+                if eouDetected || !trimmed.isEmpty {
+                    continuation.yield(TranscriptionResult(
+                        text: trimmed,
+                        detectedLanguage: nil,
+                        duration: Date().timeIntervalSince(startTime),
+                        isEndOfUtterance: eouDetected
+                    ))
                 }
                 continuation.finish()
             } catch {
@@ -464,6 +476,10 @@ extension ParakeetService: TranscriptionEngine {
             detectedLanguage: nil,
             duration: duration
         )
+    }
+
+    func supportsEndOfUtteranceDetection() async -> Bool {
+        return activeModelName == ModelInfo.KnownID.parakeetEou && eouManager != nil
     }
 
     func transcribeStream(

@@ -62,6 +62,14 @@ final class SettingsStore {
         didSet { guard !isLoading else { return }; defaults.set(onboardingLastStep, forKey: Keys.onboardingLastStep) }
     }
     
+    // MARK: - Dictation Mode
+    
+    /// When true, hotkey toggles recording on/off (press once to start, press again to stop).
+    /// When false, uses push-to-talk (hold to record, release to stop).
+    var handsFreeMode: Bool {
+        didSet { save() }
+    }
+    
     // MARK: - UserDefaults Keys
     private enum Keys {
         static let hotkeyKeyCode = "hotkeyKeyCode"
@@ -73,6 +81,7 @@ final class SettingsStore {
         static let launchAtLogin = "launchAtLogin"
         static let onboardingCompleted = "onboardingCompleted"
         static let onboardingLastStep = "onboardingLastStep"
+        static let handsFreeMode = "handsFreeMode"
     }
     
     // MARK: - Dependencies
@@ -93,6 +102,7 @@ final class SettingsStore {
         self.launchAtLogin = false
         self.onboardingCompleted = false
         self.onboardingLastStep = 0
+        self.handsFreeMode = false
         
         // Load persisted values
         load()
@@ -110,6 +120,7 @@ final class SettingsStore {
         defaults.set(showRecordingOverlay, forKey: Keys.showRecordingOverlay)
         defaults.set(onboardingCompleted, forKey: Keys.onboardingCompleted)
         defaults.set(onboardingLastStep, forKey: Keys.onboardingLastStep)
+        defaults.set(handsFreeMode, forKey: Keys.handsFreeMode)
         
         // Encode languageMode
         if let encoded = try? JSONEncoder().encode(languageMode) {
@@ -154,6 +165,10 @@ final class SettingsStore {
         self.onboardingCompleted = defaults.bool(forKey: Keys.onboardingCompleted)
         
         self.onboardingLastStep = defaults.integer(forKey: Keys.onboardingLastStep)
+        
+        if defaults.object(forKey: Keys.handsFreeMode) != nil {
+            self.handsFreeMode = defaults.bool(forKey: Keys.handsFreeMode)
+        }
     }
     
     // MARK: - Launch at Login

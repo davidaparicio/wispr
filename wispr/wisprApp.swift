@@ -182,15 +182,17 @@ final class WisprAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         startHotkeyObservation()
 
         // Start permission monitoring
-        permissionMonitoringTask = Task {
+        let permissionManager = self.permissionManager
+        permissionMonitoringTask = Task { [permissionManager] in
             await permissionManager.startMonitoringPermissionChanges()
         }
 
         // Check for app updates (non-blocking, runs in parallel)
         Log.updateChecker.info("Scheduling update check from applicationDidFinishLaunching")
+        let updater = updateChecker
         updateCheckTask = Task {
-            await updateChecker.checkForUpdate()
-            Log.updateChecker.info("Update check task completed — availableUpdate: \(self.updateChecker.availableUpdate?.version ?? "none")")
+            await updater.checkForUpdate()
+            Log.updateChecker.info("Update check task completed — availableUpdate: \(updater.availableUpdate?.version ?? "none")")
         }
 
         // Requirement 13.1, 13.12: Show onboarding on first launch

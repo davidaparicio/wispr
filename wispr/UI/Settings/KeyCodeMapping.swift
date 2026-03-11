@@ -42,7 +42,7 @@ struct KeyCodeMapping {
     /// Derived reverse mapping: lowercase character → virtual key code.
     private let charToKeyCode: [Character: UInt32]
 
-    init() {
+    private init() {
         var map: [Character: UInt32] = [:]
         for (code, name) in Self.keyNames where name.count == 1 {
             map[Character(name.lowercased())] = code

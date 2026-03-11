@@ -5,7 +5,7 @@ import ApplicationServices
 /// Safely casts a `CFTypeRef` to `AXUIElement` after verifying its Core Foundation type ID.
 private func castToAXUIElement(_ ref: CFTypeRef) -> AXUIElement? {
     guard CFGetTypeID(ref) == AXUIElementGetTypeID() else { return nil }
-    return unsafeBitCast(ref, to: AXUIElement.self)
+    return unsafeDowncast(ref, to: AXUIElement.self)
 }
 
 /// Protocol for text insertion, enabling test mocking.
@@ -147,7 +147,7 @@ final class TextInsertionService: TextInserting {
         if rangeResult == .success,
            let range = selectedRange,
            CFGetTypeID(range) == AXValueGetTypeID() {
-            let axValue = unsafeBitCast(range, to: AXValue.self)
+            let axValue = unsafeDowncast(range, to: AXValue.self)
             if AXValueGetType(axValue) == .cfRange {
                 var cfRange = CFRange()
                 if AXValueGetValue(axValue, .cfRange, &cfRange) {

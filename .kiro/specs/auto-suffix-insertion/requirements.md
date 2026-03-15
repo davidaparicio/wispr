@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This feature adds an auto-suffix insertion capability and an optional auto-send Enter keystroke to Wispr. After the speech recognition engine transcribes and inserts text, the application optionally appends a user-configured string of characters (e.g., ". " for a period followed by a space). Additionally, a separate toggle allows the application to simulate pressing Enter/Return after text insertion, useful for automatically sending messages in chat applications. Both features are independently controlled by toggles in Settings (both default: off).
+This feature adds an auto-suffix insertion capability and an optional auto-send Enter keystroke to Wispr. After the speech recognition engine transcribes and inserts text, the application optionally appends a user-configured string of characters (e.g., a space, or ". " for a period followed by a space). Additionally, a separate toggle allows the application to simulate pressing Enter/Return after text insertion, useful for automatically sending messages in chat applications. Both features are independently controlled by toggles in Settings (both default: off).
 
 ## Glossary
 

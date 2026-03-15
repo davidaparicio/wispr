@@ -2,7 +2,7 @@
 
 ## Overview
 
-Incrementally add auto-suffix insertion and auto-send Enter features to Wispr by modifying four existing files: `SettingsStore.swift`, `SettingsView.swift`, `StateManager.swift`, and `TextInsertionService.swift`. Each task builds on the previous, starting with persistence, then UI, then core logic, and finally wiring everything together.
+Incrementally add auto-suffix insertion and auto-send Enter features to Wispr by modifying four existing files (`SettingsStore.swift`, `SettingsView.swift`, `StateManager.swift`, `TextInsertionService.swift`) and introducing one new file (`SuffixEditorView.swift`). Each task builds on the previous, starting with persistence, then UI, then core logic, and finally wiring everything together.
 
 ## Tasks
 
@@ -10,7 +10,7 @@ Incrementally add auto-suffix insertion and auto-send Enter features to Wispr by
   - [x] 1.1 Add UserDefaults keys and properties for auto-suffix and auto-send Enter
     - Add `autoSuffixEnabled`, `autoSuffixText`, and `autoSendEnterEnabled` keys to the `Keys` enum in `SettingsStore.swift`
     - Add three new `@Observable` properties with `didSet` persistence guards matching the existing pattern
-    - Set defaults: `autoSuffixEnabled = false`, `autoSuffixText = ". "`, `autoSendEnterEnabled = false`
+    - Set defaults: `autoSuffixEnabled = false`, `autoSuffixText = " "`, `autoSendEnterEnabled = false`
     - _Requirements: 1.1, 1.2, 5.1_
 
   - [x] 1.2 Add load/save support for the new properties
@@ -26,14 +26,14 @@ Incrementally add auto-suffix insertion and auto-send Enter features to Wispr by
     - **Validates: Requirements 1.3, 1.4, 5.2**
 
 - [x] 2. Add settings UI controls in SettingsView
-  - [x] 2.1 Add toggles and conditional text field to the Speech Recognition section
-    - In `whisperModelSection` in `SettingsView.swift`, add a `Toggle("Auto-Insert Suffix", isOn: $store.autoSuffixEnabled)` with accessibility hint
+  - [x] 2.1 Add toggles and conditional text field to the After Transcription section
+    - In `afterTranscriptionSection` in `SettingsView.swift`, add a `Toggle("Auto-Insert Suffix", isOn: $store.autoSuffixEnabled)` with accessibility hint
     - Conditionally show a `LabeledContent("Suffix")` with a `TextField` bound to `$store.autoSuffixText` when `autoSuffixEnabled` is true
     - Add a `Toggle("Auto-Send Enter", isOn: $store.autoSendEnterEnabled)` with accessibility hint
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 5.4, 5.5_
 
   - [x] 2.2 Update Restore Defaults to reset new settings
-    - In `restoreDefaults()` in `SettingsView.swift`, add resets: `autoSuffixEnabled = false`, `autoSuffixText = ". "`, `autoSendEnterEnabled = false`
+    - In `restoreDefaults()` in `SettingsView.swift`, add resets: `autoSuffixEnabled = false`, `autoSuffixText = " "`, `autoSendEnterEnabled = false`
     - _Requirements: 4.1, 4.2, 4.3_
 
   - [x] 2.3 Write unit tests for SettingsView UI behavior

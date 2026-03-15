@@ -8,6 +8,22 @@
 
 import SwiftUI
 
+/// Renders whitespace as visible glyphs: space → `␣`, newline → `↵`, tab → `⇥`.
+/// Non-whitespace characters pass through unchanged.
+private func visibleWhitespace(for text: String) -> String {
+    var result = ""
+    for char in text {
+        switch char {
+        case " ":  result.append("␣")
+        case "\n": result.append("↵")
+        case "\r": result.append("↵")
+        case "\t": result.append("⇥")
+        default:   result.append(char)
+        }
+    }
+    return result.isEmpty ? "∅" : result
+}
+
 /// Displays the current suffix with visible whitespace glyphs and offers
 /// a picker of common presets plus a custom-edit option.
 struct SuffixEditorView: View {
@@ -27,7 +43,7 @@ struct SuffixEditorView: View {
     var body: some View {
         HStack(spacing: 6) {
             // Visual representation of the current suffix
-            Text(displayString(for: suffixText))
+            Text(visibleWhitespace(for: suffixText))
                 .font(.system(.body, design: .monospaced))
                 .foregroundStyle(.primary)
                 .padding(.horizontal, 6)
@@ -42,7 +58,7 @@ struct SuffixEditorView: View {
                             suffixText = preset.value
                         } label: {
                             HStack {
-                                Text(displayString(for: preset.label))
+                                Text(visibleWhitespace(for: preset.label))
                                     .font(.system(.body, design: .monospaced))
                                 if suffixText == preset.value {
                                     Image(systemName: SFSymbols.checkmarkPlain)
@@ -69,22 +85,6 @@ struct SuffixEditorView: View {
         .popover(isPresented: $isEditing) {
             SuffixCustomEditor(suffixText: $suffixText, isPresented: $isEditing)
         }
-    }
-
-    /// Renders whitespace as visible glyphs: space → `␣`, newline → `↵`, tab → `⇥`.
-    /// Non-whitespace characters pass through unchanged.
-    private func displayString(for text: String) -> String {
-        var result = ""
-        for char in text {
-            switch char {
-            case " ":  result.append("␣")
-            case "\n": result.append("↵")
-            case "\r": result.append("↵")
-            case "\t": result.append("⇥")
-            default:   result.append(char)
-            }
-        }
-        return result.isEmpty ? "∅" : result
     }
 
     /// Produces a spoken description for VoiceOver.
@@ -145,15 +145,6 @@ private struct SuffixCustomEditor: View {
     }
 
     private var previewString: String {
-        var result = ""
-        for char in draft {
-            switch char {
-            case " ":  result.append("␣")
-            case "\n": result.append("↵")
-            case "\t": result.append("⇥")
-            default:   result.append(char)
-            }
-        }
-        return result.isEmpty ? "∅" : result
+        visibleWhitespace(for: draft)
     }
 }

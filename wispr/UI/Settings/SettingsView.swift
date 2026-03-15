@@ -247,7 +247,7 @@ struct SettingsView: View {
         } header: {
             SectionHeader(
                 title: "After Transcription",
-                systemImage: "text.badge.checkmark",
+                systemImage: SFSymbols.textOutput,
                 tint: .teal
             )
         }
@@ -267,7 +267,7 @@ struct SettingsView: View {
         } header: {
             SectionHeader(
                 title: "Feedback",
-                systemImage: "bell",
+                systemImage: SFSymbols.feedback,
                 tint: .mint
             )
         }

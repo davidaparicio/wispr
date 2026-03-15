@@ -45,7 +45,7 @@ struct SuffixEditorView: View {
                                 Text(displayString(for: preset.label))
                                     .font(.system(.body, design: .monospaced))
                                 if suffixText == preset.value {
-                                    Image(systemName: "checkmark")
+                                    Image(systemName: SFSymbols.checkmarkPlain)
                                 }
                             }
                         }
@@ -57,7 +57,7 @@ struct SuffixEditorView: View {
                     }
                 }
             } label: {
-                Image(systemName: "chevron.up.chevron.down")
+                Image(systemName: SFSymbols.chevronUpDown)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

@@ -382,32 +382,6 @@ struct SettingsViewAutoSuffixUITests {
         #expect(store.autoSuffixText == "")
     }
 
-    // MARK: - Accessibility Hints (Requirements 2.5, 5.5)
-
-    // The SettingsView source code defines these accessibility hints as compile-time
-    // constants on the Toggle views. We verify the expected hint strings match what
-    // the view declares, ensuring the hints exist and are correct.
-
-    @Test("Auto-Insert Suffix toggle has correct accessibility hint text")
-    func testAutoSuffixToggleAccessibilityHint() {
-        // SettingsView declares:
-        //   Toggle("Auto-Insert Suffix", isOn: $store.autoSuffixEnabled)
-        //       .accessibilityHint("When enabled, appends a suffix to transcribed text")
-        let expectedHint = "When enabled, appends a suffix to transcribed text"
-        #expect(!expectedHint.isEmpty, "Accessibility hint for Auto-Insert Suffix toggle must be non-empty")
-        #expect(expectedHint.contains("suffix"), "Hint should describe the suffix feature")
-    }
-
-    @Test("Auto-Send Enter toggle has correct accessibility hint text")
-    func testAutoSendEnterToggleAccessibilityHint() {
-        // SettingsView declares:
-        //   Toggle("Auto-Send Enter", isOn: $store.autoSendEnterEnabled)
-        //       .accessibilityHint("When enabled, simulates pressing Enter after text insertion")
-        let expectedHint = "When enabled, simulates pressing Enter after text insertion"
-        #expect(!expectedHint.isEmpty, "Accessibility hint for Auto-Send Enter toggle must be non-empty")
-        #expect(expectedHint.contains("Enter"), "Hint should describe the Enter keystroke feature")
-    }
-
     // MARK: - Restore Defaults (Requirements 4.1, 4.2, 4.3)
 
     @Test("Restore Defaults resets autoSuffixEnabled to false")

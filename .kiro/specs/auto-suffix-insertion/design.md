@@ -4,21 +4,20 @@
 
 This design adds two independent post-transcription features to Wispr:
 
-1. **Auto-Suffix Insertion** — appends a configurable string (default `". "`) to transcribed text before insertion.
+1. **Auto-Suffix Insertion** — appends a configurable string (default `" "`) to transcribed text before insertion.
 2. **Auto-Send Enter** — simulates an Enter/Return keystroke after text insertion, enabling one-press message sending in chat apps.
 
 Both features are controlled by independent toggles in `SettingsStore`, surfaced in `SettingsView`, and orchestrated by `StateManager`. The order of operations is deterministic: **transcribed text → optional suffix → text insertion → optional Enter keystroke**.
 
-The implementation touches four existing files with minimal, additive changes:
+The implementation touches four existing files and introduces one new file:
 
 | File | Change |
 |---|---|
 | `SettingsStore.swift` | Add 3 new `@Observable` properties + UserDefaults keys |
-| `SettingsView.swift` | Add 2 toggles + conditional text field in Speech Recognition section |
+| `SettingsView.swift` | Add dedicated "After Transcription" section with 2 toggles + `SuffixEditorView` |
+| `SuffixEditorView.swift` | **New file** — custom suffix editor with preset picker, custom popover, and whitespace visualization |
 | `StateManager.swift` | Modify `endRecording()` and EOU handler to apply suffix and simulate Enter |
 | `TextInsertionService.swift` | Add `simulateEnterKey()` method (reuses existing CGEvent pattern) |
-
-No new files are required. No architectural changes.
 
 ## Architecture
 
@@ -60,7 +59,7 @@ Three new properties added to `SettingsStore`:
 ```swift
 // MARK: - Auto-Suffix Settings
 var autoSuffixEnabled: Bool  // default: false
-var autoSuffixText: String   // default: ". "
+var autoSuffixText: String   // default: " "
 
 // MARK: - Auto-Send Enter Settings
 var autoSendEnterEnabled: Bool  // default: false
@@ -77,25 +76,50 @@ static let autoSendEnterEnabled = "autoSendEnterEnabled"
 
 ### SettingsView Changes
 
-In the `whisperModelSection` (Speech Recognition section), add after the existing toggles:
+The auto-suffix and auto-send Enter controls live in a dedicated "After Transcription" section (`afterTranscriptionSection`), separate from the Recognition section:
 
 ```swift
-Toggle("Auto-Insert Suffix", isOn: $store.autoSuffixEnabled)
-    .accessibilityHint("When enabled, appends a suffix to transcribed text")
+private var afterTranscriptionSection: some View {
+    Section {
+        @Bindable var store = settingsStore
+        Toggle("Auto-Insert Suffix", isOn: $store.autoSuffixEnabled)
+            .accessibilityHint("When enabled, appends a suffix to transcribed text")
 
-if settingsStore.autoSuffixEnabled {
-    LabeledContent("Suffix") {
-        TextField("Suffix", text: $store.autoSuffixText)
-            .textFieldStyle(.roundedBorder)
-            .frame(width: 80)
+        if settingsStore.autoSuffixEnabled {
+            LabeledContent("Suffix") {
+                SuffixEditorView(suffixText: $store.autoSuffixText)
+            }
+        }
+
+        Toggle("Auto-Send Enter", isOn: $store.autoSendEnterEnabled)
+            .accessibilityHint("When enabled, simulates pressing Enter after text insertion")
+    } header: {
+        SectionHeader(
+            title: "After Transcription",
+            systemImage: SFSymbols.textOutput,
+            tint: .teal
+        )
     }
+    .motionRespectingAnimation(value: settingsStore.autoSuffixEnabled)
 }
-
-Toggle("Auto-Send Enter", isOn: $store.autoSendEnterEnabled)
-    .accessibilityHint("When enabled, simulates pressing Enter after text insertion")
 ```
 
-The suffix text field is conditionally shown only when `autoSuffixEnabled` is true, matching the existing pattern used for language settings.
+Instead of a plain `TextField`, the suffix value is edited via `SuffixEditorView` — a custom component that provides:
+- A visual display of the current suffix with whitespace glyphs (␣ for space, ↵ for newline, ⇥ for tab)
+- A dropdown menu with common presets: `" "`, `". "`, `"."`, `", "`, `"? "`, `"! "`
+- A "Custom…" option that opens a popover with a text field and live preview
+- Accessibility labels and hints throughout
+
+The suffix editor is conditionally shown only when `autoSuffixEnabled` is true, matching the existing pattern used for language settings.
+
+### SuffixEditorView (New File)
+
+Located at `wispr/UI/Components/SuffixEditorView.swift`, this view encapsulates all suffix editing UI:
+
+- **Whitespace visualization**: Renders the current suffix using visible glyphs so the user can distinguish spaces, newlines, and tabs at a glance. An empty suffix displays as `∅`.
+- **Preset picker**: A `Menu` with a "Common" section listing six frequently used suffixes. The currently active suffix shows a checkmark.
+- **Custom editor**: Selecting "Custom…" opens a popover (`SuffixCustomEditor`) with a `TextField`, a live preview of the whitespace-rendered string, and Cancel/Apply buttons.
+- **Accessibility**: The visual display has an `accessibilityLabel` that spells out each character (e.g., "space, period, space"). The menu button has a label and hint describing its purpose.
 
 ### StateManager Changes
 
@@ -150,12 +174,7 @@ This follows the exact same pattern as the existing `simulateCommandV()` method.
 
 ### Restore Defaults
 
-In `SettingsView.restoreDefaults()`, add:
-```swift
-settingsStore.autoSuffixEnabled = false
-settingsStore.autoSuffixText = ". "
-settingsStore.autoSendEnterEnabled = false
-```
+Restore Defaults calls `settingsStore.restoreDefaults()`, which resets all properties to their `Defaults` enum values — including `autoSuffixEnabled = false`, `autoSuffixText = " "`, and `autoSendEnterEnabled = false`.
 
 ## Data Models
 
@@ -164,7 +183,7 @@ No new data models are introduced. The feature uses three scalar properties on t
 | Property | Type | Default | UserDefaults Key |
 |---|---|---|---|
 | `autoSuffixEnabled` | `Bool` | `false` | `"autoSuffixEnabled"` |
-| `autoSuffixText` | `String` | `". "` | `"autoSuffixText"` |
+| `autoSuffixText` | `String` | `" "` | `"autoSuffixText"` |
 | `autoSendEnterEnabled` | `Bool` | `false` | `"autoSendEnterEnabled"` |
 
 These are persisted via `UserDefaults` using the same `didSet`/`load()` pattern as all other `SettingsStore` properties. No database, file, or network storage is involved.
@@ -215,7 +234,7 @@ No new `WisprError` cases are needed. The existing error handling in `endRecordi
 
 Unit tests cover specific examples, edge cases, and UI behavior:
 
-- **SettingsStore defaults**: Verify `autoSuffixEnabled` defaults to `false`, `autoSuffixText` defaults to `". "`, `autoSendEnterEnabled` defaults to `false` (Requirements 1.1, 1.2, 5.1)
+- **SettingsStore defaults**: Verify `autoSuffixEnabled` defaults to `false`, `autoSuffixText` defaults to `" "`, `autoSendEnterEnabled` defaults to `false` (Requirements 1.1, 1.2, 5.1)
 - **SettingsView toggle visibility**: Verify suffix text field appears when `autoSuffixEnabled` is on and hides when off (Requirements 2.2, 2.3)
 - **SettingsView accessibility hints**: Verify both toggles have accessibility hints (Requirements 2.5, 5.5)
 - **Restore defaults**: Verify all three new settings reset to defaults (Requirements 4.1, 4.2, 4.3)

@@ -23,7 +23,7 @@ This feature adds an auto-suffix insertion capability and an optional auto-send 
 #### Acceptance Criteria
 
 1. THE SettingsStore SHALL persist an `autoSuffixEnabled` boolean property with a default value of `false`.
-2. THE SettingsStore SHALL persist an `autoSuffixText` string property with a default value of `". "` (period followed by a space).
+2. THE SettingsStore SHALL persist an `autoSuffixText` string property with a default value of `" "` (a space).
 3. WHEN the user changes the `autoSuffixEnabled` toggle, THE SettingsStore SHALL persist the new value to UserDefaults immediately.
 4. WHEN the user changes the `autoSuffixText` value, THE SettingsStore SHALL persist the new value to UserDefaults immediately.
 5. WHEN Wispr launches, THE SettingsStore SHALL load the persisted `autoSuffixEnabled` and `autoSuffixText` values from UserDefaults.
@@ -34,7 +34,7 @@ This feature adds an auto-suffix insertion capability and an optional auto-send 
 
 #### Acceptance Criteria
 
-1. THE SettingsView SHALL display a toggle labeled "Auto-Insert Suffix" in the Speech Recognition section.
+1. THE SettingsView SHALL display a toggle labeled "Auto-Insert Suffix" in the After Transcription section.
 2. WHEN the `autoSuffixEnabled` toggle is on, THE SettingsView SHALL display a text field labeled "Suffix" allowing the user to enter the suffix characters.
 3. WHEN the `autoSuffixEnabled` toggle is off, THE SettingsView SHALL hide the suffix text field.
 4. THE SettingsView SHALL bind the toggle to `SettingsStore.autoSuffixEnabled` and the text field to `SettingsStore.autoSuffixText`.
@@ -58,7 +58,7 @@ This feature adds an auto-suffix insertion capability and an optional auto-send 
 #### Acceptance Criteria
 
 1. WHEN the user activates "Restore Defaults" in SettingsView, THE SettingsView SHALL reset `autoSuffixEnabled` to `false`.
-2. WHEN the user activates "Restore Defaults" in SettingsView, THE SettingsView SHALL reset `autoSuffixText` to `". "`.
+2. WHEN the user activates "Restore Defaults" in SettingsView, THE SettingsView SHALL reset `autoSuffixText` to `" "`.
 3. WHEN the user activates "Restore Defaults" in SettingsView, THE SettingsView SHALL reset `autoSendEnterEnabled` to `false`.
 
 ### Requirement 5: Auto-Send Enter Keystroke
@@ -70,7 +70,7 @@ This feature adds an auto-suffix insertion capability and an optional auto-send 
 1. THE SettingsStore SHALL persist an `autoSendEnterEnabled` boolean property with a default value of `false`.
 2. WHEN the user changes the `autoSendEnterEnabled` toggle, THE SettingsStore SHALL persist the new value to UserDefaults immediately.
 3. WHEN Wispr launches, THE SettingsStore SHALL load the persisted `autoSendEnterEnabled` value from UserDefaults.
-4. THE SettingsView SHALL display a toggle labeled "Auto-Send Enter" in the Speech Recognition section, independent from the "Auto-Insert Suffix" toggle.
+4. THE SettingsView SHALL display a toggle labeled "Auto-Send Enter" in the After Transcription section, independent from the "Auto-Insert Suffix" toggle.
 5. THE SettingsView toggle for "Auto-Send Enter" SHALL include an accessibility hint describing the feature purpose.
 6. WHILE `autoSendEnterEnabled` is true, WHEN the StateManager completes text insertion, THE StateManager SHALL simulate an Enter/Return keystroke after the inserted text and after any suffix appended by the auto-suffix feature.
 7. WHILE `autoSendEnterEnabled` is false, THE StateManager SHALL not simulate any Enter/Return keystroke after text insertion.

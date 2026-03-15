@@ -43,7 +43,7 @@ final class StateManager {
 
     private let audioEngine: AudioEngine
     private let whisperService: any TranscriptionEngine
-    private let textInsertionService: TextInsertionService
+    private let textInsertionService: any TextInserting
     private let hotkeyMonitor: HotkeyMonitor
     private let permissionManager: PermissionManager
     private let settingsStore: SettingsStore
@@ -72,7 +72,7 @@ final class StateManager {
     init(
         audioEngine: AudioEngine,
         whisperService: any TranscriptionEngine,
-        textInsertionService: TextInsertionService,
+        textInsertionService: any TextInserting,
         hotkeyMonitor: HotkeyMonitor,
         permissionManager: PermissionManager,
         settingsStore: SettingsStore
@@ -221,8 +221,15 @@ final class StateManager {
                     return
                 }
 
+                // Requirement 3.1, 3.2, 3.3, 3.4: Apply optional suffix before insertion
+                let finalText = self.applyAutoSuffix(to: finalResult.text)
+
                 do {
-                    try await self.textInsertionService.insertText(finalResult.text)
+                    try await self.textInsertionService.insertText(finalText)
+
+                    // Requirement 5.6, 5.8, 5.9: Simulate Enter after successful insertion
+                    self.applyAutoSendEnter()
+
                     NSAccessibility.post(
                         element: NSApp as Any,
                         notification: .announcementRequested,
@@ -232,7 +239,7 @@ final class StateManager {
                 } catch {
                     let pasteboard = NSPasteboard.general
                     pasteboard.clearContents()
-                    pasteboard.setString(finalResult.text, forType: .string)
+                    pasteboard.setString(finalText, forType: .string)
                     await self.handleError(
                         .textInsertionFailed(
                             "Text insertion failed. The transcribed text has been copied to your clipboard for manual pasting.."
@@ -250,6 +257,31 @@ final class StateManager {
     private func cancelEouMonitoring() {
         eouMonitoringTask?.cancel()
         eouMonitoringTask = nil
+    }
+
+    // MARK: - Auto-Suffix & Auto-Send Helpers
+
+    /// Applies optional suffix to transcribed text based on settings.
+    ///
+    /// Returns `text + autoSuffixText` when the feature is enabled and both
+    /// strings are non-empty; otherwise returns the original text unchanged.
+    ///
+    /// **Validates**: Requirements 3.1, 3.2, 3.3
+    func applyAutoSuffix(to text: String) -> String {
+        guard settingsStore.autoSuffixEnabled,
+              !text.isEmpty,
+              !settingsStore.autoSuffixText.isEmpty else {
+            return text
+        }
+        return text + settingsStore.autoSuffixText
+    }
+
+    /// Simulates Enter keystroke if auto-send is enabled.
+    ///
+    /// **Validates**: Requirements 5.6, 5.7
+    func applyAutoSendEnter() {
+        guard settingsStore.autoSendEnterEnabled else { return }
+        textInsertionService.simulateEnterKey()
     }
 
     // MARK: - State Machine
@@ -405,15 +437,21 @@ final class StateManager {
                 return
             }
 
-            // Requirement 4.1, 4.3: Insert transcribed text
+            // Requirement 3.1, 3.2, 3.3: Apply optional suffix before insertion
+            let finalText = applyAutoSuffix(to: result.text)
+
+            // Requirement 4.1, 4.3: Insert transcribed text (with suffix if enabled)
             do {
-                try await textInsertionService.insertText(result.text)
+                try await textInsertionService.insertText(finalText)
                 Log.stateManager.debug("endRecording — text inserted successfully")
+
+                // Requirement 5.6, 5.7, 5.9: Simulate Enter after successful insertion
+                applyAutoSendEnter()
             } catch {
                 // Requirement 4.4: On insertion failure, retain text on pasteboard and notify
                 let pasteboard = NSPasteboard.general
                 pasteboard.clearContents()
-                pasteboard.setString(result.text, forType: .string)
+                pasteboard.setString(finalText, forType: .string)
                 await handleError(
                     .textInsertionFailed(
                         "Text insertion failed. The transcribed text has been copied to your clipboard for manual pasting."

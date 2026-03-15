@@ -217,6 +217,18 @@ struct SettingsView: View {
 
             Toggle("Show Recording Overlay", isOn: $store.showRecordingOverlay)
                 .accessibilityHint("When enabled, a floating overlay appears while recording")
+
+            Toggle("Auto-Insert Suffix", isOn: $store.autoSuffixEnabled)
+                .accessibilityHint("When enabled, appends a suffix to transcribed text")
+
+            if settingsStore.autoSuffixEnabled {
+                LabeledContent("Suffix") {
+                    SuffixEditorView(suffixText: $store.autoSuffixText)
+                }
+            }
+
+            Toggle("Auto-Send Enter", isOn: $store.autoSendEnterEnabled)
+                .accessibilityHint("When enabled, simulates pressing Enter after text insertion")
         } header: {
             SectionHeader(
                 title: "Speech Recognition",
@@ -321,15 +333,7 @@ struct SettingsView: View {
     // MARK: - Restore Defaults
 
     private func restoreDefaults() {
-        settingsStore.hotkeyKeyCode = 49        // Space
-        settingsStore.hotkeyModifiers = 2048    // Option
-        settingsStore.selectedAudioDeviceUID = nil
-        settingsStore.activeModelName = ModelInfo.KnownID.tiny
-        settingsStore.languageMode = .autoDetect
-        settingsStore.showRecordingOverlay = true
-        settingsStore.launchAtLogin = false
-        settingsStore.handsFreeMode = false
-        settingsStore.soundFeedbackEnabled = false
+        settingsStore.restoreDefaults()
         hotkeyError = nil
         isRecordingHotkey = false
     }
@@ -391,17 +395,35 @@ struct SettingsView: View {
 
 #if DEBUG
 private struct SettingsPreview: View {
-    @State private var settingsStore = PreviewMocks.makeSettingsStore()
+    @State private var settingsStore: SettingsStore
     @State private var theme = PreviewMocks.makeTheme()
     @State private var updateChecker = PreviewMocks.makeUpdateChecker()
     @State private var stateManager: StateManager
 
     private let whisperService: any TranscriptionEngine
 
-    init() {
+    init(
+        autoSuffixEnabled: Bool = false,
+        autoSendEnterEnabled: Bool = false,
+        languageSpecific: Bool = false,
+        languagePinned: Bool = false
+    ) {
+        let store = PreviewMocks.makeSettingsStore()
+        store.autoSuffixEnabled = autoSuffixEnabled
+        store.autoSendEnterEnabled = autoSendEnterEnabled
+        if languagePinned {
+            store.languageMode = .pinned(code: "en")
+        } else if languageSpecific {
+            store.languageMode = .specific(code: "en")
+        }
+        self._settingsStore = State(initialValue: store)
+
         let service = PreviewMocks.makeWhisperService()
         self.whisperService = service
-        self._stateManager = State(initialValue: PreviewMocks.makeStateManager(whisperService: service))
+        self._stateManager = State(initialValue: PreviewMocks.makeStateManager(
+            settingsStore: store,
+            whisperService: service
+        ))
     }
 
     var body: some View {
@@ -423,5 +445,18 @@ private struct SettingsPreview: View {
 #Preview("Settings - Dark") {
     SettingsPreview()
         .preferredColorScheme(.dark)
+}
+
+#Preview("Settings - Suffix & Language Expanded") {
+    SettingsPreview(autoSuffixEnabled: true, languageSpecific: true)
+}
+
+#Preview("Settings - All Toggles On") {
+    SettingsPreview(
+        autoSuffixEnabled: true,
+        autoSendEnterEnabled: true,
+        languageSpecific: true,
+        languagePinned: true
+    )
 }
 #endif

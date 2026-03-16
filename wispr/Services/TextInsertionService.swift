@@ -43,7 +43,18 @@ protocol TextInserting: Sendable {
 /// require main thread access.
 @MainActor
 final class TextInsertionService: TextInserting {
-    
+
+    // MARK: - Pasteboard Restore State
+
+    /// The user's original pasteboard contents captured before the first override.
+    /// Remains set while a restore is pending, so rapid insertions don't re-capture
+    /// our own transcription text as the "original".
+    private var originalPasteboardContents: [NSPasteboard.PasteboardType: Data]?
+
+    /// The pending pasteboard restore task. Cancelled and rescheduled on each insertion
+    /// so the 2-second window resets.
+    private var pasteboardRestoreTask: Task<Void, Never>?
+
     // MARK: - Public Interface
     
     /// Inserts text at the current cursor position in the frontmost application.
@@ -213,25 +224,37 @@ final class TextInsertionService: TextInserting {
     /// - Throws: `WisprError.textInsertionFailed` if clipboard insertion fails
     private func insertViaClipboard(_ text: String) async throws {
         let pasteboard = NSPasteboard.general
-        
-        // Save original pasteboard contents (Requirement 4.5)
-        let originalContents = saveCurrentPasteboardContents(pasteboard)
-        
+
+        // Save the user's original pasteboard only if we don't already have a
+        // pending override. This prevents capturing our own transcription text
+        // when insertViaClipboard is called again before the restore fires.
+        if originalPasteboardContents == nil {
+            originalPasteboardContents = saveCurrentPasteboardContents(pasteboard)
+        }
+
         // Clear and set new text
         pasteboard.clearContents()
         guard pasteboard.setString(text, forType: .string) else {
             throw WisprError.textInsertionFailed("Failed to copy text to pasteboard")
         }
-        
+
         // Simulate ⌘V keystroke
         let success = simulateCommandV()
-        
+
         guard success else {
             throw WisprError.textInsertionFailed("Failed to simulate ⌘V keystroke")
         }
-        
-        // Restore original pasteboard contents after 2 seconds (Requirement 4.5)
-        await restorePasteboard(originalContents, after: .seconds(2))
+
+        // Cancel any pending restore and reschedule, always restoring to the
+        // original snapshot captured before the first override. (Requirement 4.5)
+        let contentsToRestore = originalPasteboardContents ?? [:]
+        pasteboardRestoreTask?.cancel()
+        pasteboardRestoreTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.restorePasteboard(contentsToRestore, after: .seconds(2))
+            self.originalPasteboardContents = nil
+            self.pasteboardRestoreTask = nil
+        }
     }
     
     /// Saves the current pasteboard contents for later restoration.

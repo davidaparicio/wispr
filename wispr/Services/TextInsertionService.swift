@@ -229,9 +229,12 @@ final class TextInsertionService: TextInserting {
         guard success else {
             throw WisprError.textInsertionFailed("Failed to simulate ⌘V keystroke")
         }
-        
+
         // Restore original pasteboard contents after 2 seconds (Requirement 4.5)
-        await restorePasteboard(originalContents, after: .seconds(2))
+        // Fire-and-forget so the caller isn't blocked waiting for the restore delay.
+        Task { @MainActor [self] in
+            await self.restorePasteboard(originalContents, after: .seconds(2))
+        }
     }
     
     /// Saves the current pasteboard contents for later restoration.

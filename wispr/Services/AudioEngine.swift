@@ -38,7 +38,7 @@ actor AudioEngine {
     /// Sets the input device for audio capture
     /// - Parameter deviceID: The AudioDeviceID to use for input
     /// - Throws: WisprError if the device cannot be set
-    func setInputDevice(_ deviceID: AudioDeviceID) throws {
+    func setInputDevice(_ deviceID: AudioDeviceID?) throws {
         selectedDeviceID = deviceID
     }
 
@@ -95,6 +95,7 @@ actor AudioEngine {
             )
             if status != noErr {
                 Log.audioEngine.warning("Failed to set input device \(deviceID), using system default (OSStatus: \(status))")
+                selectedDeviceID = nil
             }
         }
 

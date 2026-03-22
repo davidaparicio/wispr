@@ -365,13 +365,18 @@ final class StateManager {
         )
 
         do {
-            // Requirement 8.2: Use the user's selected input device
-            if let deviceUID = settingsStore.selectedAudioDeviceUID {
-                if let deviceID = await audioEngine.deviceIDForUID(deviceUID) {
-                    try await audioEngine.setInputDevice(deviceID)
-                } else {
-                    Log.stateManager.debug("beginRecording — selected device UID '\(deviceUID)' not found, using system default")
+            // Requirement 8.2: Use the user's selected input device.
+            // Always set the device (including nil) so a previously-selected
+            // device doesn't persist when the user switches back to "System Default"
+            // or the saved device is no longer available.
+            if let deviceUID = settingsStore.selectedAudioDeviceUID,
+               let deviceID = await audioEngine.deviceIDForUID(deviceUID) {
+                try await audioEngine.setInputDevice(deviceID)
+            } else {
+                if let uid = settingsStore.selectedAudioDeviceUID {
+                    Log.stateManager.debug("beginRecording — selected device UID '\(uid)' not found, falling back to system default")
                 }
+                try await audioEngine.setInputDevice(nil)
             }
 
             // Requirement 2.1: Start audio capture

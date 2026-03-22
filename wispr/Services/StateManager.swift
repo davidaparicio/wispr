@@ -365,6 +365,15 @@ final class StateManager {
         )
 
         do {
+            // Requirement 8.2: Use the user's selected input device
+            if let deviceUID = settingsStore.selectedAudioDeviceUID {
+                if let deviceID = await audioEngine.deviceIDForUID(deviceUID) {
+                    try await audioEngine.setInputDevice(deviceID)
+                } else {
+                    Log.stateManager.debug("beginRecording — selected device UID '\(deviceUID)' not found, using system default")
+                }
+            }
+
             // Requirement 2.1: Start audio capture
             let levelStream = try await audioEngine.startCapture()
             audioLevelStream = levelStream

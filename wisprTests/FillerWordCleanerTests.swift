@@ -190,10 +190,24 @@ struct FillerWordCleanerTests {
         #expect(FillerWordCleaner.clean("Hello world") == "Hello world")
     }
 
-    @Test("Handles text with punctuation around fillers")
-    func testPunctuationAround() {
-        // Filler at sentence boundary with comma
-        #expect(FillerWordCleaner.clean("Well, um, I think so") == "Well, , I think so")
+    @Test("Cleans up filler between commas: 'Well, um, I think so'")
+    func testFillerBetweenCommas() {
+        #expect(FillerWordCleaner.clean("Well, um, I think so") == "Well, I think so")
+    }
+
+    @Test("Cleans up filler with trailing comma: 'um, I think so'")
+    func testFillerWithTrailingComma() {
+        #expect(FillerWordCleaner.clean("um, I think so") == "I think so")
+    }
+
+    @Test("Cleans up filler between semicolons")
+    func testFillerBetweenSemicolons() {
+        #expect(FillerWordCleaner.clean("first; uh; second") == "first; second")
+    }
+
+    @Test("Cleans up French filler between commas")
+    func testFrenchFillerBetweenCommas() {
+        #expect(FillerWordCleaner.clean("Bon, euh, je pense") == "Bon, je pense")
     }
 
     @Test("Preserves non-English text")

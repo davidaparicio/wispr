@@ -45,6 +45,6 @@ enum FillerWordCleaner {
     static func clean(_ text: String) -> String {
         let stripped = text.replacing(fillerWithContextPattern, with: " ")
         let collapsed = stripped.replacing(multiSpacePattern, with: " ")
-        return collapsed.trimmingCharacters(in: .whitespaces)
+        return collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

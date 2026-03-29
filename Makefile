@@ -39,7 +39,7 @@ bump-build: ## Set build number (CFBundleVersion) to git commit count
 
 archive: bump-build ## Bump build number and create Release archive (version is unchanged)
 	xcodebuild -project $(XCODEPROJ) -scheme $(SCHEME) -configuration Release \
-		-archivePath $(ARCHIVE_PATH) archive | xcbeautify
+		-archivePath $(ARCHIVE_PATH) clean archive | xcbeautify
 
 upload: archive _setup-api-key ## Archive and upload to App Store Connect
 	xcodebuild -exportArchive \

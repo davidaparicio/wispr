@@ -38,11 +38,12 @@ bump-build: ## Set build number (CFBundleVersion) to git commit count
 	@echo "Build number set to $(BUILD_NUM)"
 
 archive: bump-build ## Bump build number and create Release archive (version is unchanged)
-	xcodebuild -project $(XCODEPROJ) -scheme $(SCHEME) -configuration Release \
+	set -o pipefail && xcodebuild -project $(XCODEPROJ) -scheme $(SCHEME) -configuration Release \
 		-archivePath $(ARCHIVE_PATH) clean archive | xcbeautify
 
 upload: archive _setup-api-key ## Archive and upload to App Store Connect
-	xcodebuild -exportArchive \
+	@rm -rf $(EXPORT_DIR)
+	set -o pipefail && xcodebuild -exportArchive \
 		-archivePath $(ARCHIVE_PATH) \
 		-exportPath $(EXPORT_DIR) \
 		-exportOptionsPlist ExportOptions.plist \
@@ -53,8 +54,9 @@ upload: archive _setup-api-key ## Archive and upload to App Store Connect
 	@$(MAKE) _cleanup-api-key
 
 notarize: archive _setup-api-key ## Archive, export with Developer ID, notarize, and staple
+	@rm -rf $(EXPORT_DIR)
 	@echo "📦 Exporting with Developer ID signing..."
-	xcodebuild -exportArchive \
+	set -o pipefail && xcodebuild -exportArchive \
 		-archivePath $(ARCHIVE_PATH) \
 		-exportPath $(EXPORT_DIR) \
 		-exportOptionsPlist ExportOptionsHomebrew.plist \
@@ -76,13 +78,20 @@ notarize: archive _setup-api-key ## Archive, export with Developer ID, notarize,
 	@spctl -a -vvv -t install "$(APP_PATH)"
 	@$(MAKE) _cleanup-api-key
 
-brew-clean: ## Clean up existing release tags and GitHub release (usage: make brew-clean VERSION=1.0.0)
+brew-clean: ## Clean up existing release tags, GitHub release, and homebrew cask (usage: make brew-clean VERSION=1.0.0)
 	@test -n "$(VERSION)" || { echo "Usage: make brew-clean VERSION=1.0.0"; exit 1; }
 	$(eval TAG := v$(VERSION))
 	@echo "🧹 Cleaning up release $(TAG)..."
 	@git tag -d $(TAG) 2>/dev/null || true
 	@git push --no-verify --delete origin $(TAG) 2>/dev/null || true
 	@gh release delete $(TAG) --yes 2>/dev/null || true
+	@if [ -d "../homebrew-macos" ] && [ -f "../homebrew-macos/Casks/wispr.rb" ]; then \
+		echo "🍺 Reverting homebrew cask..."; \
+		cd ../homebrew-macos && git pull --rebase origin main && \
+		git log --oneline -1 -- Casks/wispr.rb | grep -q "$(VERSION)" && \
+		git revert --no-edit HEAD && \
+		git push origin main || echo "  (no matching cask commit to revert)"; \
+	fi
 	@echo "✅ Cleanup complete"
 
 brew-release: ## Create Homebrew cask release (usage: make brew-release VERSION=1.0.0)

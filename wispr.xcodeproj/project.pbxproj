@@ -140,7 +140,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		00A1C0B62F50AD06001D1A22 /* WisprApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = WisprApp.app; path = wispr.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		00A1C0B62F50AD06001D1A22 /* Wispr.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = Wispr.app; path = Wispr.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		00A1C0C32F50AD09001D1A22 /* WisprTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WisprTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		00A1C0CD2F50AD09001D1A22 /* wisprUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = wisprUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		00C110012F60A00100000005 /* WisprCLI */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = WisprCLI; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -290,7 +290,7 @@
 		00A1C0B72F50AD06001D1A22 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				00A1C0B62F50AD06001D1A22 /* WisprApp.app */,
+				00A1C0B62F50AD06001D1A22 /* Wispr.app */,
 				00C110012F60A00100000005 /* WisprCLI */,
 				00A1C0C32F50AD09001D1A22 /* WisprTests.xctest */,
 				00A1C0CD2F50AD09001D1A22 /* wisprUITests.xctest */,
@@ -533,7 +533,7 @@
 				00FA01012F58A00000000001 /* FluidAudio */,
 			);
 			productName = wispr;
-			productReference = 00A1C0B62F50AD06001D1A22 /* WisprApp.app */;
+			productReference = 00A1C0B62F50AD06001D1A22 /* Wispr.app */;
 			productType = "com.apple.product-type.application";
 		};
 		00A1C0C22F50AD09001D1A22 /* WisprTests */ = {
@@ -979,7 +979,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 260417.274;
+				CURRENT_PROJECT_VERSION = 260528.277;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 56U756R2L2;
 				ENABLE_APP_SANDBOX = YES;
@@ -1000,10 +1000,10 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.9.2;
+				MARKETING_VERSION = 1.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stormacq.mac.wispr;
 				PRODUCT_MODULE_NAME = WisprApp;
-				PRODUCT_NAME = wispr;
+				PRODUCT_NAME = Wispr;
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -1026,7 +1026,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 260417.274;
+				CURRENT_PROJECT_VERSION = 260528.277;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 56U756R2L2;
 				ENABLE_APP_SANDBOX = YES;
@@ -1047,10 +1047,10 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.9.2;
+				MARKETING_VERSION = 1.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stormacq.mac.wispr;
 				PRODUCT_MODULE_NAME = WisprApp;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = Wispr;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -1069,12 +1069,12 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 260417.274;
+				CURRENT_PROJECT_VERSION = 260528.277;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 56U756R2L2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
-				MARKETING_VERSION = 1.9.2;
+				MARKETING_VERSION = 1.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stormacq.mac.wisprTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1095,12 +1095,12 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 260417.274;
+				CURRENT_PROJECT_VERSION = 260528.277;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 56U756R2L2;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
-				MARKETING_VERSION = 1.9.2;
+				MARKETING_VERSION = 1.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stormacq.mac.wisprTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1120,11 +1120,11 @@
 			buildSettings = {
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 260417.274;
+				CURRENT_PROJECT_VERSION = 260528.277;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 56U756R2L2;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.9.2;
+				MARKETING_VERSION = 1.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stormacq.mac.wisprUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1143,11 +1143,11 @@
 			buildSettings = {
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 260417.274;
+				CURRENT_PROJECT_VERSION = 260528.277;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 56U756R2L2;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.9.2;
+				MARKETING_VERSION = 1.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stormacq.mac.wisprUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1167,14 +1167,14 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
-				CURRENT_PROJECT_VERSION = 260417.274;
+				CURRENT_PROJECT_VERSION = 260528.277;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 56U756R2L2;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
-				MARKETING_VERSION = 1.9.2;
+				MARKETING_VERSION = 1.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.stormacq.mac.wispr-cli";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1194,14 +1194,14 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
-				CURRENT_PROJECT_VERSION = 260417.274;
+				CURRENT_PROJECT_VERSION = 260528.277;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 56U756R2L2;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
-				MARKETING_VERSION = 1.9.2;
+				MARKETING_VERSION = 1.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.stormacq.mac.wispr-cli";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

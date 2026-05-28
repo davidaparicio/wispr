@@ -7,10 +7,11 @@
 //  Requirements: 5.3, 5.4, 17.10
 //
 
-import Testing
 import AppKit
-@testable import WisprApp
+import Testing
 import WisprCore
+
+@testable import WisprApp
 
 // MARK: - Test Helpers
 
@@ -43,6 +44,13 @@ private func createTestController(
 
     let updateChecker = PreviewMocks.makeUpdateChecker()
 
+    let meetingAudioEngine = MeetingAudioEngine()
+    let meetingStateManager = MeetingStateManager(
+        meetingAudioEngine: meetingAudioEngine,
+        transcriptionEngine: whisperService,
+        settingsStore: settingsStore
+    )
+
     let controller = MenuBarController(
         stateManager: stateManager,
         settingsStore: settingsStore,
@@ -52,7 +60,8 @@ private func createTestController(
         whisperService: whisperService,
         permissionManager: permissionManager,
         textCorrectionService: TextCorrectionService(),
-        updateChecker: updateChecker
+        updateChecker: updateChecker,
+        meetingStateManager: meetingStateManager
     )
 
     return (controller, stateManager, settingsStore, themeEngine)
@@ -106,7 +115,9 @@ struct MenuBarControllerIconTests {
     func testErrorSymbol() {
         let themeEngine = UIThemeEngine()
         let symbol = themeEngine.menuBarSymbol(for: .error("test"))
-        #expect(symbol == "exclamationmark.triangle", "Error state should use 'exclamationmark.triangle' symbol")
+        #expect(
+            symbol == "exclamationmark.triangle",
+            "Error state should use 'exclamationmark.triangle' symbol")
     }
 
     @Test("Each app state maps to a distinct icon symbol")
@@ -269,7 +280,7 @@ struct MenuBarControllerAccessibilityTests {
     func testMenuItemSymbolsResolve() {
         let themeEngine = UIThemeEngine()
         let actions: [UIThemeEngine.ActionSymbol] = [
-            .settings, .language, .model, .quit
+            .settings, .language, .model, .quit,
         ]
         for action in actions {
             let symbolName = themeEngine.actionSymbol(action)

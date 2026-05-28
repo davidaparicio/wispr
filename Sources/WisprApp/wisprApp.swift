@@ -74,7 +74,7 @@ final class WisprAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     /// Composite engine aggregating WhisperKit and Parakeet V3 behind a single interface.
     let whisperService: any TranscriptionEngine = CompositeTranscriptionEngine(engines: [
         WhisperService(),
-        ParakeetService()
+        ParakeetService(),
     ])
 
     /// Text insertion via Accessibility API / clipboard fallback.
@@ -92,8 +92,14 @@ final class WisprAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     /// Checks GitHub Releases for a newer app version.
     let updateChecker = UpdateChecker()
 
+    /// Meeting audio engine for dual capture (mic + system audio).
+    let meetingAudioEngine = MeetingAudioEngine()
+
     /// Central state coordinator — depends on all services above.
     private(set) var stateManager: StateManager?
+
+    /// Meeting state manager for meeting transcription mode.
+    private(set) var meetingStateManager: MeetingStateManager?
 
     /// Menu bar status item controller.
     private var menuBarController: MenuBarController?
@@ -101,8 +107,14 @@ final class WisprAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     /// Recording overlay floating panel.
     private var overlayPanel: RecordingOverlayPanel?
 
+    /// Meeting transcription floating window.
+    private var meetingPanel: MeetingWindowPanel?
+
     /// Task observing StateManager.appState to drive overlay visibility.
     private var overlayObservationTask: Task<Void, Never>?
+
+    /// Task observing MeetingStateManager to drive meeting window visibility.
+    private var meetingObservationTask: Task<Void, Never>?
 
     /// Task observing hotkey settings changes to re-register the global hotkey.
     private var hotkeyObservationTask: Task<Void, Never>?
@@ -155,6 +167,14 @@ final class WisprAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
 
         Log.app.debug("bootstrap — StateManager initialized")
 
+        // Create meeting state manager
+        let msm = MeetingStateManager(
+            meetingAudioEngine: meetingAudioEngine,
+            transcriptionEngine: whisperService,
+            settingsStore: settingsStore
+        )
+        meetingStateManager = msm
+
         // Create menu bar controller (Req 5.1)
         menuBarController = MenuBarController(
             stateManager: sm,
@@ -165,12 +185,20 @@ final class WisprAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
             whisperService: whisperService,
             permissionManager: permissionManager,
             textCorrectionService: textCorrectionService,
-            updateChecker: updateChecker
+            updateChecker: updateChecker,
+            meetingStateManager: msm
         )
 
         // Create recording overlay panel
         overlayPanel = RecordingOverlayPanel(
             stateManager: sm,
+            settingsStore: settingsStore,
+            themeEngine: themeEngine
+        )
+
+        // Create meeting transcription panel
+        meetingPanel = MeetingWindowPanel(
+            meetingStateManager: msm,
             settingsStore: settingsStore,
             themeEngine: themeEngine
         )
@@ -182,7 +210,8 @@ final class WisprAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
                 modifiers: settingsStore.hotkeyModifiers
             )
         } catch {
-            Log.hotkey.error("bootstrap — hotkey registration failed: \(error.localizedDescription)")
+            Log.hotkey.error(
+                "bootstrap — hotkey registration failed: \(error.localizedDescription)")
         }
 
         // Start theme engine monitoring for appearance / accessibility changes
@@ -190,6 +219,9 @@ final class WisprAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
 
         // Start observing state to drive overlay visibility (Req 9.1, 9.3, 9.4, 9.5)
         startOverlayObservation(stateManager: sm)
+
+        // Start observing meeting state to drive meeting window visibility
+        startMeetingObservation(meetingStateManager: msm)
 
         // Re-register hotkey whenever the user changes it in settings
         startHotkeyObservation()
@@ -205,7 +237,9 @@ final class WisprAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         let updater = updateChecker
         updateCheckTask = Task {
             await updater.checkForUpdate()
-            Log.updateChecker.info("Update check task completed — availableUpdate: \(updater.availableUpdate?.version ?? "none")")
+            Log.updateChecker.info(
+                "Update check task completed — availableUpdate: \(updater.availableUpdate?.version ?? "none")"
+            )
         }
 
         // Requirement 13.1, 13.12: Show onboarding on first launch
@@ -247,7 +281,8 @@ final class WisprAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     /// the onboarding-completed flag so the wizard reappears on next launch (Req 13.16).
     func windowWillClose(_ notification: Notification) {
         guard let closingWindow = notification.object as? NSWindow,
-              closingWindow === onboardingWindow else { return }
+            closingWindow === onboardingWindow
+        else { return }
         if !settingsStore.onboardingCompleted {
             NSApplication.shared.terminate(nil)
         }
@@ -256,13 +291,15 @@ final class WisprAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
 
     func applicationWillTerminate(_ notification: Notification) {
         overlayObservationTask?.cancel()
+        meetingObservationTask?.cancel()
         hotkeyObservationTask?.cancel()
         permissionMonitoringTask?.cancel()
         updateCheckTask?.cancel()
 
+        // Stop any active meeting session (synchronous — cascades via task group)
+        meetingStateManager?.cancelRecording()
+
         // Force UserDefaults to flush to disk before the process exits.
-        // Without this, in-memory changes (e.g. onboardingCompleted) can be
-        // lost if the app is terminated quickly (Xcode stop, NSApp.terminate).
         settingsStore.flush()
     }
 
@@ -339,7 +376,9 @@ final class WisprAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
                     )
                     Log.app.debug("hotkeyObservation — re-registered hotkey")
                 } catch {
-                    Log.app.error("hotkeyObservation — failed to re-register hotkey: \(error.localizedDescription)")
+                    Log.app.error(
+                        "hotkeyObservation — failed to re-register hotkey: \(error.localizedDescription)"
+                    )
                 }
             }
         }
@@ -387,13 +426,47 @@ final class WisprAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
             if settingsStore.showRecordingOverlay, let overlay = overlayPanel, !overlay.isVisible {
                 Log.app.debug("overlayObservation — showing overlay for state: \(state)")
                 overlay.show()
-            } else if !settingsStore.showRecordingOverlay, let overlay = overlayPanel, overlay.isVisible {
+            } else if !settingsStore.showRecordingOverlay, let overlay = overlayPanel,
+                overlay.isVisible
+            {
                 overlay.dismiss()
             }
         case .idle:
             if let overlay = overlayPanel, overlay.isVisible {
                 Log.app.debug("overlayObservation — dismissing overlay")
                 overlay.dismiss()
+            }
+        }
+    }
+
+    // MARK: - Meeting Window Observation
+
+    /// Observes `MeetingStateManager.isWindowVisible` and shows/dismisses the meeting panel.
+    private func startMeetingObservation(meetingStateManager msm: MeetingStateManager) {
+        meetingObservationTask = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                let shouldShow = msm.isWindowVisible
+
+                if shouldShow {
+                    if let panel = self.meetingPanel, !panel.isVisible {
+                        Log.app.debug("meetingObservation — showing meeting window")
+                        panel.show()
+                    }
+                } else {
+                    if let panel = self.meetingPanel, panel.isVisible {
+                        Log.app.debug("meetingObservation — dismissing meeting window")
+                        panel.dismiss()
+                    }
+                }
+
+                await withCheckedContinuation { continuation in
+                    withObservationTracking {
+                        _ = msm.isWindowVisible
+                    } onChange: {
+                        continuation.resume()
+                    }
+                }
             }
         }
     }

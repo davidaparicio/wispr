@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "00A1C0B52F50AD06001D1A22"
-               BuildableName = "WisprApp.app"
+               BuildableName = "Wispr.app"
                BlueprintName = "WisprApp"
                ReferencedContainer = "container:wispr.xcodeproj">
             </BuildableReference>
@@ -69,7 +69,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "00A1C0B52F50AD06001D1A22"
-            BuildableName = "WisprApp.app"
+            BuildableName = "Wispr.app"
             BlueprintName = "WisprApp"
             ReferencedContainer = "container:wispr.xcodeproj">
          </BuildableReference>
@@ -86,7 +86,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "00A1C0B52F50AD06001D1A22"
-            BuildableName = "WisprApp.app"
+            BuildableName = "Wispr.app"
             BlueprintName = "WisprApp"
             ReferencedContainer = "container:wispr.xcodeproj">
          </BuildableReference>

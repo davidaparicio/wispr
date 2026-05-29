@@ -33,7 +33,11 @@ enum MeetingSpeaker: Sendable, Equatable, Hashable {
 }
 ```
 
-Add a `displayName: String` computed property: `.you → "You"`, `.others(nil) → "Others"`, `.others(0) → "Speaker 1"`, etc. Update `asPlainText()` to use `displayName`.
+Add a `displayName: String` computed property: `.you → "You"`, `.others(nil) → "Others"`, `.others(0) → "Speaker 1"`, `.others(1) → "Speaker 2"`, etc.
+
+**Index convention (explicit):** the stored `speakerIndex` is **always 0-based** internally — this matches the index used by the color palette below, by Sortformer's slot IDs, and by log output. The **+1 transform happens only inside `displayName`**, so logs and code never disagree with each other; only the user-visible string is 1-based. Every call site that sees an index sees the 0-based form.
+
+Update `asPlainText()` to use `displayName`.
 
 Reasoning: keeping the case-based enum (rather than renaming to `speakerLabel: String?`) means existing call sites (`MeetingStateManager.transcribeMicAudio`/`transcribeSystemAudio`, the test fakes, `MeetingTranscriptView`) flip with minimal churn, and pre-diarized "Others" entries (when system audio is captured before the diarizer warms up) still render cleanly.
 
@@ -61,16 +65,27 @@ Internals:
 - Refactor system-audio handling so a single consumer reads the audio stream, passes each chunk to **both** the diarizer (`ingest`) and the transcription engine, then resolves the speaker before appending the entry:
 
 ```swift
-let chunkStart = elapsedSinceMeetingStart  // tracked alongside chunks
-await diarizer?.ingest(chunk, at: chunkStart)
-let result = try await transcriptionEngine.transcribe(chunk, language: language)
-let speakerIdx = await diarizer?.dominantSpeaker(in: chunkStart...chunkStart + chunkDuration)
-transcript.entries.append(
-    MeetingTranscriptEntry(speaker: .others(speakerIndex: speakerIdx), text: ...)
-)
+for await (chunk, chunkStart) in audioStream {  // chunkStart is provided by MeetingAudioEngine
+    await diarizer?.ingest(chunk, at: chunkStart)
+    let result = try await transcriptionEngine.transcribe(chunk, language: language)
+    let chunkEnd = chunkStart + Double(chunk.count) / Double(MeetingAudioEngine.sampleRate)
+    let speakerIdx = await diarizer?.dominantSpeaker(in: chunkStart...chunkEnd)
+    transcript.entries.append(
+        MeetingTranscriptEntry(speaker: .others(speakerIndex: speakerIdx), text: ...)
+    )
+}
 ```
 
-The chunk-start timestamp must be derived from sample count, not `Date()`, so it stays aligned with the diarizer timeline. `MeetingAudioEngine` already chunks at exactly 80 000 samples; expose a running cumulative-samples counter (or include it in the yielded value) so the consumer can compute `seconds = totalSamples / 16000`.
+**Timestamp source.** Chunk-start timestamps must come from the audio engine, not from `Date()`, so they line up exactly with what the diarizer sees. `MeetingAudioEngine` already chunks at exactly 80 000 samples and is the single source of truth for the system-audio sample rate (currently 16 kHz, hardcoded in the engine itself). Rather than dividing sample counts in the consumer, the engine should:
+
+- Expose a `static let sampleRate: Int = 16_000` constant (or already-existing equivalent) — this is the *only* place the value lives.
+- Change the system-audio stream from `AsyncStream<[Float]>` to `AsyncStream<(samples: [Float], startTime: TimeInterval)>`, computing `startTime` as `cumulativeSamples / Double(sampleRate)` inside the engine itself.
+
+This eliminates the duplicated `16000` literal in the consumer and means a future change to the engine's sample rate (e.g. if Sortformer ever requires a different rate) flips one constant.
+
+**Cold-start handling.** The streaming Sortformer model needs at least a few hundred milliseconds of audio before its timeline is populated, so `dominantSpeaker(in:)` will legitimately return `nil` for the first one or two chunks of every meeting (chunk size ~5 s, so this is the first 5–10 s). This is expected and not a bug; pending entries simply render as plain "Others" until the diarizer catches up. The renderer already handles `.others(nil)` cleanly via `displayName`.
+
+If users find the warmup gap too jarring later, the next iteration can buffer those entries and retro-attribute them once the timeline contains the relevant window — but that adds reorder/flicker complexity, so v1 just lives with the gap and documents it in the release notes.
 
 `transcribeMicAudio` does NOT change — it keeps producing `MeetingSpeaker.you`.
 
@@ -92,7 +107,7 @@ Add one `Bool` toggle following the existing `didSet`/`isLoading` pattern (see `
 var meetingDiarizationEnabled: Bool { didSet { ... } }
 ```
 
-Default: `true` once the diarization model is downloaded; `false` until then. The toggle lets users opt out if they hit performance/quality issues, since the meeting feature itself is still flagged "experimental".
+**Default: `false`, explicit opt-in.** The setting starts off and never flips automatically. The Settings panel (or the meeting window's first-run state) shows a row "Identify individual remote speakers (experimental)" with a toggle; turning it on for the first time triggers the Sortformer model download with a progress indicator, then enables diarization for subsequent meetings. This avoids the surprising "feature suddenly appeared mid-session" UX of an auto-enable on download.
 
 **6. Tests — `wisprTests/`**
 
@@ -135,7 +150,7 @@ End-to-end manual test (the only honest way to verify diarization quality):
    - Switching to a 3-speaker podcast shows "Speaker 3".
    - Your own voice (mic) still labels as "You".
    - Stop the meeting → `Copy` produces text with the per-speaker labels.
-5. Toggle `meetingDiarizationEnabled` off in Settings → next meeting falls back to plain "Others" labels (regression check).
+5. Toggle `meetingDiarizationEnabled` off in Settings → next meeting falls back to plain "Others" labels (regression check). On a fresh install the toggle is off; flipping it on triggers the model download dialog before the next meeting can use it.
 6. Try with a meeting where Screen Recording permission is denied → mic-only path still works, no diarizer crashes.
 
 CPU/ANE check: monitor Activity Monitor during a 5-min meeting; Sortformer should stay on ANE with negligible CPU. If CPU spikes, fall back to checking that `numSpeakers = 4` and chunkDuration are at defaults.

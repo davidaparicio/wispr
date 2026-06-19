@@ -8,9 +8,23 @@
 import Foundation
 
 /// Identifies the audio source / speaker in a meeting transcript.
-enum MeetingSpeaker: String, Sendable, Equatable, Hashable {
-    case you = "You"
-    case others = "Others"
+///
+/// Speaker indices are stored **0-based** internally. The +1 transform to
+/// "Speaker 1", "Speaker 2", etc. happens only inside `displayName`.
+enum MeetingSpeaker: Sendable, Equatable, Hashable {
+    case you
+    /// Remote participant. `speakerIndex` is nil during Sortformer's cold-start
+    /// window or when diarization is disabled — renders as plain "Others".
+    case others(speakerIndex: Int?)
+
+    /// User-visible label for transcript display and plain-text export.
+    var displayName: String {
+        switch self {
+        case .you: return "You"
+        case .others(.none): return "Others"
+        case .others(.some(let index)): return "Speaker \(index + 1)"
+        }
+    }
 }
 
 /// A single timestamped entry in a meeting transcript.
@@ -53,7 +67,7 @@ struct MeetingTranscript: Sendable, Equatable {
     func asPlainText() -> String {
         entries.map { entry in
             let time = Self.formatTime(entry.timestamp)
-            return "[\(time)] \(entry.speaker.rawValue): \(entry.text)"
+            return "[\(time)] \(entry.speaker.displayName): \(entry.text)"
         }.joined(separator: "\n")
     }
 

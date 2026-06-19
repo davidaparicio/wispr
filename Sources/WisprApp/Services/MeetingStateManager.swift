@@ -63,6 +63,14 @@ final class MeetingStateManager {
     private let transcriptionEngine: any TranscriptionEngine
     private let settingsStore: SettingsStore
 
+    /// Optional speaker-diarization engine for the system-audio ("Others") track.
+    /// `nil` disables diarization entirely (e.g. in tests). When present, it is
+    /// only warmed up if `settingsStore.meetingDiarizationEnabled` is true.
+    private let meetingDiarizer: MeetingDiarizer?
+
+    /// Whether diarization is active for the current session (set at startMeeting).
+    private var diarizationActive = false
+
     // MARK: - Tasks
 
     private var recordingTask: Task<Void, Never>?
@@ -72,11 +80,13 @@ final class MeetingStateManager {
     init(
         meetingAudioEngine: MeetingAudioEngine,
         transcriptionEngine: any TranscriptionEngine,
-        settingsStore: SettingsStore
+        settingsStore: SettingsStore,
+        meetingDiarizer: MeetingDiarizer? = nil
     ) {
         self.meetingAudioEngine = meetingAudioEngine
         self.transcriptionEngine = transcriptionEngine
         self.settingsStore = settingsStore
+        self.meetingDiarizer = meetingDiarizer
     }
 
     // MARK: - Meeting Lifecycle
@@ -89,6 +99,21 @@ final class MeetingStateManager {
 
         transcript = MeetingTranscript()
         errorMessage = nil
+
+        // Warm up the diarizer when enabled. On failure, degrade gracefully to
+        // source-based labels (the same fallback used when system audio is
+        // unavailable) rather than blocking the meeting.
+        diarizationActive = false
+        if settingsStore.meetingDiarizationEnabled, let diarizer = meetingDiarizer {
+            do {
+                try await diarizer.warmUp()
+                diarizationActive = true
+            } catch {
+                Log.stateManager.warning(
+                    "MeetingStateManager — diarizer warmup failed: \(error.localizedDescription). Continuing without diarization."
+                )
+            }
+        }
 
         do {
             let (micLevels, systemLevels) = try await meetingAudioEngine.startCapture()
@@ -126,6 +151,10 @@ final class MeetingStateManager {
         recordingTask = nil
 
         await meetingAudioEngine.stopCapture()
+        if diarizationActive {
+            await meetingDiarizer?.reset()
+            diarizationActive = false
+        }
 
         meetingState = .idle
         micLevel = 0
@@ -183,18 +212,35 @@ final class MeetingStateManager {
     private func transcribeSystemAudio() async {
         let audioStream = await meetingAudioEngine.systemAudioStream
         let language = settingsStore.languageMode
+        let diarizer = diarizationActive ? meetingDiarizer : nil
 
-        for await chunk in audioStream {
+        for await audioChunk in audioStream {
             guard !Task.isCancelled else { break }
-            guard chunk.count >= 8000 else { continue }
+            guard audioChunk.samples.count >= 8000 else { continue }
+
+            // Feed the chunk to the diarizer before transcribing so its timeline
+            // covers this window by the time we query the dominant speaker.
+            await diarizer?.ingest(audioChunk.samples, at: audioChunk.startTime)
 
             do {
-                let result = try await transcriptionEngine.transcribe(chunk, language: language)
+                let result = try await transcriptionEngine.transcribe(
+                    audioChunk.samples, language: language)
                 let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { continue }
 
+                // Resolve the dominant speaker over the chunk's time window.
+                // nil (cold-start or diarization disabled) renders as "Others".
+                var speakerIndex: Int?
+                if let diarizer {
+                    let chunkEnd =
+                        audioChunk.startTime
+                        + Double(audioChunk.samples.count) / Double(MeetingAudioEngine.sampleRate)
+                    speakerIndex = await diarizer.dominantSpeaker(
+                        in: audioChunk.startTime...chunkEnd)
+                }
+
                 transcript.entries.append(
-                    MeetingTranscriptEntry(speaker: .others, text: text)
+                    MeetingTranscriptEntry(speaker: .others(speakerIndex: speakerIndex), text: text)
                 )
             } catch {
                 if case WisprError.emptyTranscription = error { continue }

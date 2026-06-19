@@ -66,7 +66,8 @@ struct MeetingTranscriptTests {
             MeetingTranscriptEntry(speaker: .you, text: "Hello world", timestamp: timestamp1)
         )
         transcript.entries.append(
-            MeetingTranscriptEntry(speaker: .others, text: "Hi there", timestamp: timestamp2)
+            MeetingTranscriptEntry(
+                speaker: .others(speakerIndex: nil), text: "Hi there", timestamp: timestamp2)
         )
 
         let plainText = transcript.asPlainText()
@@ -99,10 +100,13 @@ struct MeetingTranscriptTests {
         #expect(entry1.id != entry2.id)
     }
 
-    @Test("MeetingSpeaker raw values are correct")
-    func testMeetingSpeakerRawValues() {
-        #expect(MeetingSpeaker.you.rawValue == "You")
-        #expect(MeetingSpeaker.others.rawValue == "Others")
+    @Test("MeetingSpeaker display names are correct")
+    func testMeetingSpeakerDisplayNames() {
+        #expect(MeetingSpeaker.you.displayName == "You")
+        #expect(MeetingSpeaker.others(speakerIndex: nil).displayName == "Others")
+        #expect(MeetingSpeaker.others(speakerIndex: 0).displayName == "Speaker 1")
+        #expect(MeetingSpeaker.others(speakerIndex: 1).displayName == "Speaker 2")
+        #expect(MeetingSpeaker.others(speakerIndex: 3).displayName == "Speaker 4")
     }
 }
 

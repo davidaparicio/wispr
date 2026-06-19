@@ -69,6 +69,11 @@ actor MeetingAudioEngine {
     /// ~5 seconds of audio at 16kHz = 80,000 samples.
     private let chunkSize = 80_000
 
+    /// System-audio chunk size. Shorter than the mic chunk (~3s) so each
+    /// transcript entry spans less time, reducing how often a single entry
+    /// flattens a speaker change into one diarization label.
+    private let systemChunkSize = 48_000
+
     /// Audio sample rate used for both capture and diarization (Hz).
     static let sampleRate: Int = 16_000
 
@@ -350,9 +355,9 @@ actor MeetingAudioEngine {
 
         systemSamplesTotal += samples.count
         systemBuffer.append(contentsOf: samples)
-        if systemBuffer.count >= chunkSize {
-            let chunk = Array(systemBuffer.prefix(chunkSize))
-            systemBuffer.removeFirst(min(chunkSize, systemBuffer.count))
+        if systemBuffer.count >= systemChunkSize {
+            let chunk = Array(systemBuffer.prefix(systemChunkSize))
+            systemBuffer.removeFirst(min(systemChunkSize, systemBuffer.count))
             let startTime = Double(systemChunkStartSamples) / Double(Self.sampleRate)
             systemChunkStartSamples = systemSamplesTotal - systemBuffer.count
             Log.audioEngine.debug(

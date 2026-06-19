@@ -39,7 +39,12 @@ actor MeetingDiarizer {
 
     // MARK: - State
 
-    private let sortformer = SortformerDiarizer()
+    /// Sortformer configuration. `.balancedV2` uses the v2 weights with a large
+    /// FIFO (188) for better quality at the same ~1s latency as the fast config,
+    /// and handles overlapping/high-speaker-count audio better than v2.1.
+    private static let config: SortformerConfig = .balancedV2
+
+    private let sortformer = SortformerDiarizer(config: MeetingDiarizer.config)
     private var isInitialized = false
 
     /// Accumulated finalized speaker segments from all processed chunks.
@@ -68,7 +73,7 @@ actor MeetingDiarizer {
 
         Log.diarizer.info("MeetingDiarizer — loading Sortformer model")
         let models = try await SortformerModels.loadFromHuggingFace(
-            config: .default,
+            config: Self.config,
             cacheDirectory: ModelPaths.sortformer
         )
         sortformer.initialize(models: models)

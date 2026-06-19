@@ -47,6 +47,12 @@ actor MeetingDiarizer {
     /// Latest tentative segments (replaced on each process() call).
     private var tentativeSegments: [Segment] = []
 
+    /// Meeting-relative start time of the first ingested chunk. Sortformer's
+    /// internal timeline begins at 0 when it receives its first audio, so we
+    /// add this offset to align segment times with the engine's meeting clock
+    /// (the diarizer may start mid-meeting once its model finishes warming up).
+    private var baseTime: TimeInterval?
+
     /// Sortformer slot → per-meeting monotonic index (0-based).
     private var slotToAssigned: [Int: Int] = [:]
     private var nextAssigned: Int = 0
@@ -77,22 +83,27 @@ actor MeetingDiarizer {
     /// a diarizer failure never interrupts transcription.
     func ingest(_ samples: [Float], at startTime: TimeInterval) {
         guard isInitialized else { return }
+        if baseTime == nil { baseTime = startTime }
+        let offset = Float(baseTime ?? 0)
         do {
             sortformer.addAudio(samples)
             if let update = try sortformer.process() {
-                // Accumulate newly finalized segments
+                // Accumulate newly finalized segments (shifted to meeting time)
                 for seg in update.finalizedSegments {
                     let idx = assignedIndex(for: seg.speakerIndex)
                     finalizedSegments.append(
-                        Segment(assignedIndex: idx, startTime: seg.startTime, endTime: seg.endTime)
+                        Segment(
+                            assignedIndex: idx,
+                            startTime: seg.startTime + offset,
+                            endTime: seg.endTime + offset)
                     )
                 }
                 // Replace tentative segments with the latest snapshot
                 tentativeSegments = update.tentativeSegments.map { seg in
                     Segment(
                         assignedIndex: assignedIndex(for: seg.speakerIndex),
-                        startTime: seg.startTime,
-                        endTime: seg.endTime
+                        startTime: seg.startTime + offset,
+                        endTime: seg.endTime + offset
                     )
                 }
             }
@@ -135,6 +146,7 @@ actor MeetingDiarizer {
         tentativeSegments.removeAll()
         slotToAssigned.removeAll()
         nextAssigned = 0
+        baseTime = nil
         Log.diarizer.debug("MeetingDiarizer — reset")
     }
 

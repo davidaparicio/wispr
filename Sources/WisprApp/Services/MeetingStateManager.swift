@@ -71,6 +71,10 @@ final class MeetingStateManager {
     /// Whether diarization is active for the current session (set at startMeeting).
     private var diarizationActive = false
 
+    /// Guards against re-entrant `startMeeting()` while capture is being set up
+    /// (the window between the first `await` and `meetingState = .recording`).
+    private var isStarting = false
+
     // MARK: - Tasks
 
     private var recordingTask: Task<Void, Never>?
@@ -93,31 +97,22 @@ final class MeetingStateManager {
 
     /// Starts a new meeting transcription session.
     func startMeeting() async {
-        guard meetingState == .idle else { return }
+        guard meetingState == .idle, !isStarting else { return }
+        isStarting = true
+        defer { isStarting = false }
 
         Log.stateManager.debug("MeetingStateManager — starting meeting")
 
         transcript = MeetingTranscript()
         errorMessage = nil
-
-        // Warm up the diarizer when enabled. On failure, degrade gracefully to
-        // source-based labels (the same fallback used when system audio is
-        // unavailable) rather than blocking the meeting.
         diarizationActive = false
-        if settingsStore.meetingDiarizationEnabled, let diarizer = meetingDiarizer {
-            do {
-                try await diarizer.warmUp()
-                diarizationActive = true
-            } catch {
-                Log.stateManager.warning(
-                    "MeetingStateManager — diarizer warmup failed: \(error.localizedDescription). Continuing without diarization."
-                )
-            }
-        }
 
         do {
             let (micLevels, systemLevels) = try await meetingAudioEngine.startCapture()
 
+            // Flip to recording immediately so the UI is responsive. The diarizer
+            // (if enabled) warms up concurrently below — chunks that arrive before
+            // it's ready simply render as "Others".
             meetingState = .recording
             isWindowVisible = true
 
@@ -125,6 +120,7 @@ final class MeetingStateManager {
                 await withTaskGroup(of: Void.self) { group in
                     group.addTask { await self.consumeMicLevels(micLevels) }
                     group.addTask { await self.consumeSystemLevels(systemLevels) }
+                    group.addTask { await self.warmUpDiarizerIfEnabled() }
                     group.addTask { await self.transcribeMicAudio() }
                     group.addTask { await self.transcribeSystemAudio() }
                     group.addTask { await self.runTimer() }
@@ -135,6 +131,24 @@ final class MeetingStateManager {
             Log.stateManager.error(
                 "MeetingStateManager — failed to start: \(error.localizedDescription)")
             await handleError("Failed to start meeting capture: \(error.localizedDescription)")
+        }
+    }
+
+    /// Warms up the diarizer in the background when enabled, so it's ready for
+    /// upcoming system-audio chunks without blocking the recording start.
+    /// On failure, degrades gracefully to source-based "Others" labels.
+    private func warmUpDiarizerIfEnabled() async {
+        guard settingsStore.meetingDiarizationEnabled, let diarizer = meetingDiarizer else {
+            return
+        }
+        do {
+            try await diarizer.warmUp()
+            guard !Task.isCancelled else { return }
+            diarizationActive = true
+        } catch {
+            Log.stateManager.warning(
+                "MeetingStateManager — diarizer warmup failed: \(error.localizedDescription). Continuing without diarization."
+            )
         }
     }
 
@@ -151,10 +165,10 @@ final class MeetingStateManager {
         recordingTask = nil
 
         await meetingAudioEngine.stopCapture()
-        if diarizationActive {
-            await meetingDiarizer?.reset()
-            diarizationActive = false
-        }
+        // reset() is a safe no-op if the diarizer was never warmed up, so call it
+        // unconditionally to avoid a race with the concurrent warmup task.
+        await meetingDiarizer?.reset()
+        diarizationActive = false
 
         meetingState = .idle
         micLevel = 0
@@ -212,11 +226,13 @@ final class MeetingStateManager {
     private func transcribeSystemAudio() async {
         let audioStream = await meetingAudioEngine.systemAudioStream
         let language = settingsStore.languageMode
-        let diarizer = diarizationActive ? meetingDiarizer : nil
 
         for await audioChunk in audioStream {
             guard !Task.isCancelled else { break }
             guard audioChunk.samples.count >= 8000 else { continue }
+
+            // Re-check per chunk: the diarizer may finish warming up mid-meeting.
+            let diarizer = diarizationActive ? meetingDiarizer : nil
 
             // Feed the chunk to the diarizer before transcribing so its timeline
             // covers this window by the time we query the dominant speaker.

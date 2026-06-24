@@ -72,9 +72,9 @@ Four-layer structure under `wispr/`:
 - **FluidAudio 0.13.4** — NVIDIA Parakeet models
 - **swift-argument-parser 1.7.1** — CLI argument parsing
 
-## CLI Tool (`wispr-cli`)
+## CLI Tool (`WisprCLI`)
 
-Embedded in `Wispr.app/Contents/Resources/bin/wispr-cli`. Transcribes audio/video files offline. Shares model storage with GUI app at `~/Library/Application Support/wispr/models/`.
+Embedded in `Wispr.app/Contents/Resources/bin/WisprCLI`. Transcribes audio/video files offline. Shares model storage with GUI app at `~/Library/Application Support/wispr/models/`.
 
 ## Concurrency Patterns
 

@@ -9,6 +9,8 @@
 import SwiftUI
 
 struct CLIInstallDialogView: View {
+    static let cliExecutableName = "WisprCLI"
+
     let appBundlePath: String
     let symlinkPath: String
     var onDismiss: (() -> Void)?
@@ -16,7 +18,7 @@ struct CLIInstallDialogView: View {
     @State private var copied = false
 
     private var cliSourcePath: String {
-        "\(appBundlePath)/Contents/Resources/bin/wispr-cli"
+        "\(appBundlePath)/Contents/Resources/bin/\(Self.cliExecutableName)"
     }
 
     private var installCommand: String {

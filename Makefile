@@ -22,7 +22,7 @@ API_KEY_PATH   := $(API_KEYS_DIR)/AuthKey_$(API_KEY_ID).p8
 APP_PATH          := $(EXPORT_DIR)/Wispr.app
 ZIP_PATH          := $(EXPORT_DIR)/wispr-notarized.zip
 
-.PHONY: help bump-build archive upload notarize brew-release brew-clean list-downloads clean-downloads list-container list-prefs clean-prefs reset-permissions reset-login-item reset-onboarding
+.PHONY: help test bump-build archive upload notarize brew-release brew-clean list-downloads clean-downloads list-container list-prefs clean-prefs reset-permissions reset-login-item reset-onboarding
 
 _setup-api-key:
 	@test -f "$(SECRETS_JSON)" || { echo "Error: $(SECRETS_JSON) not found"; exit 1; }
@@ -40,6 +40,14 @@ bump-build: ## Set build number (CFBundleVersion) to git commit count
 archive: bump-build ## Bump build number and create Release archive (version is unchanged)
 	set -o pipefail && xcodebuild -project $(XCODEPROJ) -scheme $(SCHEME) -configuration Release \
 		-archivePath $(ARCHIVE_PATH) clean archive | xcbeautify
+
+test: ## Run unit tests with xcodebuild (not SPM)
+	set -o pipefail && xcodebuild test \
+		-project $(XCODEPROJ) \
+		-scheme $(SCHEME) \
+		-configuration Debug \
+		-destination 'platform=macOS,arch=arm64' \
+		-only-testing:WisprTests | xcbeautify
 
 upload: archive _setup-api-key ## Archive and upload to App Store Connect
 	@rm -rf $(EXPORT_DIR)

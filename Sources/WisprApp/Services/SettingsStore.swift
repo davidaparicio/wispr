@@ -105,6 +105,17 @@ final class SettingsStore {
         }
     }
 
+    /// When true, microphone transcriptions that duplicate a recent system-audio
+    /// ("Others") transcription are suppressed. Without headphones, remote
+    /// participants' speech leaks from the speakers into the mic and would
+    /// otherwise be transcribed twice (see issue #65). Defaults to true.
+    var meetingEchoSuppressionEnabled: Bool {
+        didSet {
+            guard !isLoading else { return }
+            defaults.set(meetingEchoSuppressionEnabled, forKey: Keys.meetingEchoSuppressionEnabled)
+        }
+    }
+
     /// When true, plays short audio cues on recording start/stop.
     var soundFeedbackEnabled: Bool {
         didSet {
@@ -184,6 +195,7 @@ final class SettingsStore {
         static let onboardingLastStep = "onboardingLastStep"
         static let handsFreeMode = "handsFreeMode"
         static let meetingDiarizationEnabled = "meetingDiarizationEnabled"
+        static let meetingEchoSuppressionEnabled = "meetingEchoSuppressionEnabled"
         static let soundFeedbackEnabled = "soundFeedbackEnabled"
         static let autoSuffixEnabled = "autoSuffixEnabled"
         static let autoSuffixText = "autoSuffixText"
@@ -209,6 +221,7 @@ final class SettingsStore {
         static let onboardingLastStep: Int = 0
         static let handsFreeMode: Bool = false
         static let meetingDiarizationEnabled: Bool = false
+        static let meetingEchoSuppressionEnabled: Bool = true
         static let soundFeedbackEnabled: Bool = false
         static let autoSuffixEnabled: Bool = false
         static let autoSuffixText: String = " "
@@ -238,6 +251,7 @@ final class SettingsStore {
         self.onboardingLastStep = Defaults.onboardingLastStep
         self.handsFreeMode = Defaults.handsFreeMode
         self.meetingDiarizationEnabled = Defaults.meetingDiarizationEnabled
+        self.meetingEchoSuppressionEnabled = Defaults.meetingEchoSuppressionEnabled
         self.soundFeedbackEnabled = Defaults.soundFeedbackEnabled
         self.autoSuffixEnabled = Defaults.autoSuffixEnabled
         self.autoSuffixText = Defaults.autoSuffixText
@@ -265,6 +279,7 @@ final class SettingsStore {
         launchAtLogin = Defaults.launchAtLogin
         handsFreeMode = Defaults.handsFreeMode
         meetingDiarizationEnabled = Defaults.meetingDiarizationEnabled
+        meetingEchoSuppressionEnabled = Defaults.meetingEchoSuppressionEnabled
         soundFeedbackEnabled = Defaults.soundFeedbackEnabled
         autoSuffixEnabled = Defaults.autoSuffixEnabled
         autoSuffixText = Defaults.autoSuffixText
@@ -291,6 +306,7 @@ final class SettingsStore {
         defaults.set(onboardingLastStep, forKey: Keys.onboardingLastStep)
         defaults.set(handsFreeMode, forKey: Keys.handsFreeMode)
         defaults.set(meetingDiarizationEnabled, forKey: Keys.meetingDiarizationEnabled)
+        defaults.set(meetingEchoSuppressionEnabled, forKey: Keys.meetingEchoSuppressionEnabled)
         defaults.set(soundFeedbackEnabled, forKey: Keys.soundFeedbackEnabled)
         defaults.set(autoSuffixEnabled, forKey: Keys.autoSuffixEnabled)
         defaults.set(autoSuffixText, forKey: Keys.autoSuffixText)
@@ -360,6 +376,11 @@ final class SettingsStore {
 
         if defaults.object(forKey: Keys.meetingDiarizationEnabled) != nil {
             self.meetingDiarizationEnabled = defaults.bool(forKey: Keys.meetingDiarizationEnabled)
+        }
+
+        if defaults.object(forKey: Keys.meetingEchoSuppressionEnabled) != nil {
+            self.meetingEchoSuppressionEnabled = defaults.bool(
+                forKey: Keys.meetingEchoSuppressionEnabled)
         }
 
         if defaults.object(forKey: Keys.soundFeedbackEnabled) != nil {

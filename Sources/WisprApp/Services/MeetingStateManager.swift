@@ -212,9 +212,7 @@ final class MeetingStateManager {
                 let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { continue }
 
-                transcript.entries.append(
-                    MeetingTranscriptEntry(speaker: .you, text: text)
-                )
+                record(MeetingTranscriptEntry(speaker: .you, text: text))
             } catch {
                 if case WisprError.emptyTranscription = error { continue }
                 Log.stateManager.warning(
@@ -255,7 +253,7 @@ final class MeetingStateManager {
                         in: audioChunk.startTime...chunkEnd)
                 }
 
-                transcript.entries.append(
+                record(
                     MeetingTranscriptEntry(speaker: .others(speakerIndex: speakerIndex), text: text)
                 )
             } catch {
@@ -264,6 +262,21 @@ final class MeetingStateManager {
                     "MeetingStateManager — system transcription error: \(error.localizedDescription)"
                 )
             }
+        }
+    }
+
+    /// Adds a transcript entry, applying microphone echo suppression when the
+    /// setting is enabled. Echo suppression drops mic ("You") transcriptions that
+    /// duplicate a recent remote ("Others") transcription — the result of remote
+    /// speech leaking from the speakers into the mic (issue #65).
+    private func record(_ entry: MeetingTranscriptEntry) {
+        guard settingsStore.meetingEchoSuppressionEnabled else {
+            transcript.entries.append(entry)
+            return
+        }
+        if !transcript.appendSuppressingEcho(entry) {
+            Log.stateManager.debug(
+                "MeetingStateManager — suppressed microphone echo of remote audio")
         }
     }
 

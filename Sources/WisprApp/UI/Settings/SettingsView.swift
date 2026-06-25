@@ -71,6 +71,8 @@ struct SettingsView: View {
         // Meeting section
         static let meetingDiarization =
             "When enabled, the meeting transcript labels remote participants as Speaker 1, Speaker 2, and so on using on-device diarization"
+        static let meetingEchoSuppression =
+            "When enabled, speech from remote participants that leaks into your microphone is not transcribed a second time as your own speech"
 
         // General section
         static let launchAtLogin = "When enabled, Wispr starts automatically when you log in"
@@ -385,6 +387,15 @@ struct SettingsView: View {
 
             Text(
                 "Splits the \"Others\" track into Speaker 1, Speaker 2, … using on-device diarization. Downloads a small model on first use. Experimental."
+            )
+            .font(.caption)
+            .foregroundStyle(theme.secondaryTextColor)
+
+            Toggle("Suppress Microphone Echo", isOn: $store.meetingEchoSuppressionEnabled)
+                .accessibilityHint(AccessibilityHints.meetingEchoSuppression)
+
+            Text(
+                "Avoids transcribing remote participants twice when their voice leaks from your speakers into the microphone. Turn off if you use headphones and want every microphone word kept."
             )
             .font(.caption)
             .foregroundStyle(theme.secondaryTextColor)

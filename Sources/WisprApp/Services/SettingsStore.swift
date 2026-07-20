@@ -124,6 +124,14 @@ final class SettingsStore {
         }
     }
 
+    // MARK: - Meeting Detection
+
+    /// When true, Wispr watches for another app using the microphone and posts a
+    /// notification inviting the user to start meeting transcription.
+    var meetingDetectionEnabled: Bool {
+        didSet { guard !isLoading else { return }; defaults.set(meetingDetectionEnabled, forKey: Keys.meetingDetectionEnabled) }
+    }
+
     // MARK: - Auto-Suffix Settings
 
     /// When true, appends `autoSuffixText` to transcribed text before insertion.
@@ -197,6 +205,7 @@ final class SettingsStore {
         static let meetingDiarizationEnabled = "meetingDiarizationEnabled"
         static let meetingEchoSuppressionEnabled = "meetingEchoSuppressionEnabled"
         static let soundFeedbackEnabled = "soundFeedbackEnabled"
+        static let meetingDetectionEnabled = "meetingDetectionEnabled"
         static let autoSuffixEnabled = "autoSuffixEnabled"
         static let autoSuffixText = "autoSuffixText"
         static let removeFillerWords = "removeFillerWords"
@@ -223,6 +232,7 @@ final class SettingsStore {
         static let meetingDiarizationEnabled: Bool = false
         static let meetingEchoSuppressionEnabled: Bool = true
         static let soundFeedbackEnabled: Bool = false
+        static let meetingDetectionEnabled: Bool = false
         static let autoSuffixEnabled: Bool = false
         static let autoSuffixText: String = " "
         static let removeFillerWords: Bool = false
@@ -253,6 +263,7 @@ final class SettingsStore {
         self.meetingDiarizationEnabled = Defaults.meetingDiarizationEnabled
         self.meetingEchoSuppressionEnabled = Defaults.meetingEchoSuppressionEnabled
         self.soundFeedbackEnabled = Defaults.soundFeedbackEnabled
+        self.meetingDetectionEnabled = Defaults.meetingDetectionEnabled
         self.autoSuffixEnabled = Defaults.autoSuffixEnabled
         self.autoSuffixText = Defaults.autoSuffixText
         self.removeFillerWords = Defaults.removeFillerWords
@@ -281,6 +292,7 @@ final class SettingsStore {
         meetingDiarizationEnabled = Defaults.meetingDiarizationEnabled
         meetingEchoSuppressionEnabled = Defaults.meetingEchoSuppressionEnabled
         soundFeedbackEnabled = Defaults.soundFeedbackEnabled
+        meetingDetectionEnabled = Defaults.meetingDetectionEnabled
         autoSuffixEnabled = Defaults.autoSuffixEnabled
         autoSuffixText = Defaults.autoSuffixText
         removeFillerWords = Defaults.removeFillerWords
@@ -308,6 +320,7 @@ final class SettingsStore {
         defaults.set(meetingDiarizationEnabled, forKey: Keys.meetingDiarizationEnabled)
         defaults.set(meetingEchoSuppressionEnabled, forKey: Keys.meetingEchoSuppressionEnabled)
         defaults.set(soundFeedbackEnabled, forKey: Keys.soundFeedbackEnabled)
+        defaults.set(meetingDetectionEnabled, forKey: Keys.meetingDetectionEnabled)
         defaults.set(autoSuffixEnabled, forKey: Keys.autoSuffixEnabled)
         defaults.set(autoSuffixText, forKey: Keys.autoSuffixText)
         defaults.set(removeFillerWords, forKey: Keys.removeFillerWords)
@@ -387,6 +400,10 @@ final class SettingsStore {
             self.soundFeedbackEnabled = defaults.bool(forKey: Keys.soundFeedbackEnabled)
         }
 
+        if defaults.object(forKey: Keys.meetingDetectionEnabled) != nil {
+            self.meetingDetectionEnabled = defaults.bool(forKey: Keys.meetingDetectionEnabled)
+        }
+
         // Load auto-suffix settings
         if defaults.object(forKey: Keys.autoSuffixEnabled) != nil {
             self.autoSuffixEnabled = defaults.bool(forKey: Keys.autoSuffixEnabled)
@@ -448,6 +465,38 @@ final class SettingsStore {
             isLoading = true
             launchAtLogin = actualState
             isLoading = false
+        }
+    }
+}
+
+// MARK: - Observation Helpers
+
+extension SettingsStore {
+
+    /// An `AsyncStream` that yields once each time any value read inside
+    /// `track` changes.
+    ///
+    /// Observation is re-armed from *within* the change handler rather than
+    /// after the consumer's async work, so a change that lands while the
+    /// consumer is awaiting is not missed — unlike a bare
+    /// `withObservationTracking` loop that only re-registers once its async body
+    /// returns. Centralizes the observation idiom that would otherwise be
+    /// duplicated across observers.
+    nonisolated func changes(
+        tracking track: @escaping @MainActor @Sendable () -> Void
+    ) -> AsyncStream<Void> {
+        AsyncStream { continuation in
+            @Sendable func arm() {
+                Task { @MainActor in
+                    withObservationTracking {
+                        track()
+                    } onChange: {
+                        continuation.yield(())
+                        arm()
+                    }
+                }
+            }
+            arm()
         }
     }
 }

@@ -278,6 +278,26 @@ struct SettingsStoreTests {
         #expect(newStore.soundFeedbackEnabled == true, "soundFeedbackEnabled should persist")
     }
 
+    // MARK: - Meeting Detection Tests
+
+    @Test("SettingsStore meetingDetectionEnabled defaults to false (opt-in)")
+    func testMeetingDetectionDefault() {
+        let defaults = createTestDefaults()
+        let store = SettingsStore(defaults: defaults)
+        #expect(store.meetingDetectionEnabled == false)
+    }
+
+    @Test("SettingsStore persists meetingDetectionEnabled")
+    func testMeetingDetectionPersistence() {
+        let defaults = createTestDefaults()
+        let store = SettingsStore(defaults: defaults)
+        store.meetingDetectionEnabled = true
+
+        let newStore = SettingsStore(defaults: defaults)
+        #expect(
+            newStore.meetingDetectionEnabled == true, "meetingDetectionEnabled should persist")
+    }
+
     // MARK: - Filler Word Removal Tests
 
     @Test("SettingsStore removeFillerWords defaults to false")

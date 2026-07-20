@@ -344,7 +344,7 @@ extension ParakeetService: TranscriptionEngine {
         // Skip redundant reloads. Re-initializing the ASR manager re-runs CoreML
         // compilation and writes to disk. If the requested model is already
         // loaded, there is nothing to do.
-        if activeModelName == modelName, isModelLoaded(modelName) {
+        guard activeModelName != modelName || !isModelLoaded(modelName) else {
             Log.whisperService.debug("ParakeetService — '\(modelName)' already loaded, skipping")
             return
         }
@@ -364,7 +364,7 @@ extension ParakeetService: TranscriptionEngine {
 
     public func switchModel(to modelName: String) async throws {
         // Already active with a live manager — nothing to do.
-        if activeModelName == modelName, isModelLoaded(modelName) {
+        guard activeModelName != modelName || !isModelLoaded(modelName) else {
             Log.whisperService.debug("ParakeetService — '\(modelName)' already active, skipping")
             return
         }

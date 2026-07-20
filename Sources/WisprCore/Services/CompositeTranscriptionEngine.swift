@@ -97,7 +97,8 @@ public actor CompositeTranscriptionEngine: TranscriptionEngine {
         }
 
         // Already loaded on the right engine — skip the unload/reload cycle.
-        if activeEngineIndex == idx, await engines[idx].activeModel() == modelName {
+        let activeModel = await engines[idx].activeModel()
+        guard activeEngineIndex != idx || activeModel != modelName else {
             return
         }
 

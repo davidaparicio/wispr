@@ -294,7 +294,7 @@ public actor WhisperService {
         // CoreML/ANE compilation and the prewarm pass, which is expensive and
         // writes hundreds of MB to disk. If the requested model is already
         // loaded, there is nothing to do.
-        if whisperKit != nil, activeModelName == modelName {
+        guard whisperKit == nil || activeModelName != modelName else {
             Log.whisperService.debug("loadModel — '\(modelName)' already loaded, skipping reload")
             return
         }
@@ -319,7 +319,7 @@ public actor WhisperService {
     public func switchModel(to modelName: String) async throws {
         // Already active with a live instance — avoid a pointless unload/reload
         // that would re-trigger CoreML compilation.
-        if whisperKit != nil, activeModelName == modelName {
+        guard whisperKit == nil || activeModelName != modelName else {
             Log.whisperService.debug("switchModel — '\(modelName)' already active, skipping")
             return
         }

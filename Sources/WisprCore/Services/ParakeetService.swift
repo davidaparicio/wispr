@@ -64,11 +64,15 @@ public actor ParakeetService {
 
     // MARK: - V3 Helpers
 
-    private func downloadAndLoad() async throws {
+    private func downloadAndLoad(progressHandler: ProgressHandler? = nil) async throws {
         let sdkLeaf = AsrModels.defaultCacheDirectory(for: .v3).lastPathComponent
-        let models = try await AsrModels.downloadAndLoad(to: ModelPaths.parakeetV3(sdkLeafName: sdkLeaf), version: .v3)
+        let models = try await AsrModels.downloadAndLoad(
+            to: ModelPaths.parakeetV3(sdkLeafName: sdkLeaf),
+            version: .v3,
+            progressHandler: progressHandler
+        )
         let manager = AsrManager(config: .default)
-        try await manager.initialize(models: models)
+        try await manager.loadModels(models)
         self.asrManager = manager
         self.isDownloaded = true
         Log.whisperService.debug("ParakeetService — V3 downloadAndLoad completed")
@@ -84,13 +88,17 @@ public actor ParakeetService {
     // MARK: - EOU Helpers
 
 
-    private func downloadAndLoadEou() async throws {
+    private func downloadAndLoadEou(progressHandler: ProgressHandler? = nil) async throws {
         let cacheDir = ModelPaths.parakeetEou
         let cachedFileCount = countFiles(in: cacheDir)
 
         // Only download if the cache is incomplete
         if cachedFileCount < Self.eouExpectedFileCount {
-            try await DownloadUtils.downloadRepo(.parakeetEou160, to: ModelPaths.parakeetEouParent)
+            try await ModelHub.download(
+                .parakeetEou160,
+                to: ModelPaths.parakeetEouParent,
+                progressHandler: progressHandler
+            )
         }
         let config = MLModelConfiguration()
         config.computeUnits = .cpuAndNeuralEngine
@@ -99,7 +107,7 @@ public actor ParakeetService {
             chunkSize: .ms160,
             eouDebounceMs: 800 // ms of silence before generating an end of utterance
         )
-        try await manager.loadModels(modelDir: cacheDir)
+        try await manager.loadModels(from: cacheDir)
         self.eouManager = manager
         self.isEouDownloaded = true
         Log.whisperService.debug("ParakeetService — EOU downloadAndLoad completed")
@@ -233,14 +241,6 @@ extension ParakeetService: TranscriptionEngine {
 
         let isEou = model.id == ModelInfo.KnownID.parakeetEou
         let estimatedSize = model.estimatedSize
-        let expectedFileCount = isEou ? Self.eouExpectedFileCount : Self.expectedFileCount
-        let cacheDir: URL
-        if isEou {
-            cacheDir = ModelPaths.parakeetEou
-        } else {
-            let sdkLeaf = AsrModels.defaultCacheDirectory(for: .v3).lastPathComponent
-            cacheDir = ModelPaths.parakeetV3(sdkLeafName: sdkLeaf)
-        }
 
         let task = Task {
             defer { self.downloadTasks.removeValue(forKey: model.id) }
@@ -253,36 +253,37 @@ extension ParakeetService: TranscriptionEngine {
                     totalBytes: estimatedSize
                 ))
 
-                // Poll cache directory for file-count progress during download
-                let progressTask = Task {
-                    while !Task.isCancelled {
-                        try await Task.sleep(for: .milliseconds(500))
-                        let count = countFiles(in: cacheDir)
-                        if count >= expectedFileCount {
-                            continuation.yield(DownloadProgress(
-                                phase: .loadingModel,
-                                fractionCompleted: 1.0,
-                                bytesDownloaded: estimatedSize,
-                                totalBytes: estimatedSize
-                            ))
-                            break
-                        }
-                        let fraction = Double(count) / Double(expectedFileCount)
-                        let downloaded = Int64(Double(estimatedSize) * fraction)
+                // Forward FluidAudio's byte-level progress. It reports 0.0–0.5
+                // while downloading files and 0.5–1.0 while compiling the CoreML
+                // models. The download half is rescaled to a full 0–1 bar; the
+                // compile half is surfaced as an indeterminate preparation phase.
+                let progressHandler: ProgressHandler = { faProgress in
+                    switch faProgress.phase {
+                    case .compiling:
                         continuation.yield(DownloadProgress(
-                            phase: .downloading,
-                            fractionCompleted: fraction,
-                            bytesDownloaded: downloaded,
+                            phase: .loadingModel,
+                            fractionCompleted: 1.0,
+                            bytesDownloaded: estimatedSize,
                             totalBytes: estimatedSize
                         ))
+                    case .listing, .downloading:
+                        // FluidAudio caps download at 0.5; rescale to a full bar.
+                        let downloadFraction = min(faProgress.fractionCompleted * 2.0, 1.0)
+                        continuation.yield(DownloadProgress(
+                            phase: .downloading,
+                            fractionCompleted: downloadFraction,
+                            bytesDownloaded: Int64(Double(estimatedSize) * downloadFraction),
+                            totalBytes: estimatedSize
+                        ))
+                    @unknown default:
+                        break
                     }
                 }
-                defer { progressTask.cancel() }
 
                 if isEou {
-                    try await self.downloadAndLoadEou()
+                    try await self.downloadAndLoadEou(progressHandler: progressHandler)
                 } else {
-                    try await self.downloadAndLoad()
+                    try await self.downloadAndLoad(progressHandler: progressHandler)
                 }
                 self.activeModelName = model.id
 
@@ -481,7 +482,8 @@ extension ParakeetService: TranscriptionEngine {
         }
 
         let startTime = Date()
-        let result = try await asrManager.transcribe(audioSamples, source: .microphone)
+        var decoderState = try TdtDecoderState()
+        let result = try await asrManager.transcribe(audioSamples, decoderState: &decoderState)
 
         let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else {

@@ -170,7 +170,7 @@ struct ModelDownloadProgressView: View {
                     .foregroundStyle(theme.primaryTextColor)
             }
 
-            Text("Loading model into memory. This may take a moment for larger models.")
+            Text("Compiling the model for the Neural Engine. This can take a couple of minutes for larger models.")
                 .font(.callout)
                 .foregroundStyle(theme.secondaryTextColor)
                 .multilineTextAlignment(.center)
@@ -178,7 +178,7 @@ struct ModelDownloadProgressView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Preparing \(model.displayName). Loading model into memory.")
+        .accessibilityLabel("Preparing \(model.displayName). Compiling the model for the Neural Engine. This can take a couple of minutes.")
     }
 
     // MARK: - Warming Up

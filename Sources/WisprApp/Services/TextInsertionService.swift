@@ -1,13 +1,7 @@
 import WisprCore
 import Foundation
 import AppKit
-import ApplicationServices
-
-/// Safely casts a `CFTypeRef` to `AXUIElement` after verifying its Core Foundation type ID.
-private func castToAXUIElement(_ ref: CFTypeRef) -> AXUIElement? {
-    guard CFGetTypeID(ref) == AXUIElementGetTypeID() else { return nil }
-    return unsafeDowncast(ref, to: AXUIElement.self)
-}
+import os
 
 /// Protocol for text insertion, enabling test mocking.
 @MainActor
@@ -16,29 +10,43 @@ protocol TextInserting: Sendable {
     func simulateEnterKey()
 }
 
+/// Minimal pasteboard surface used by the clipboard insertion path, so the
+/// restore logic can be unit-tested with an in-memory fake instead of
+/// `NSPasteboard.general`.
+@MainActor
+protocol TextPasteboard: AnyObject {
+    var changeCount: Int { get }
+    var types: [NSPasteboard.PasteboardType]? { get }
+    func data(forType type: NSPasteboard.PasteboardType) -> Data?
+    @discardableResult func clearContents() -> Int
+    @discardableResult func setString(_ string: String, forType type: NSPasteboard.PasteboardType) -> Bool
+    @discardableResult func setData(_ data: Data?, forType type: NSPasteboard.PasteboardType) -> Bool
+}
+
+extension NSPasteboard: TextPasteboard {}
+
 /// Service responsible for inserting transcribed text at the cursor position.
 ///
-/// Primary method: Accessibility API (AXUIElement)
-/// Fallback method: Clipboard + simulated ⌘V keystroke
+/// Method: Clipboard + simulated ⌘V keystroke.
 ///
-/// **Validates Requirements**: 4.1, 4.2, 4.3, 4.4, 4.5
+/// The app runs under the App Sandbox (required for notarized/Developer ID and
+/// App Store distribution), which prohibits using the Accessibility API
+/// (`AXUIElement`) to read or control other apps' UI. Clipboard + ⌘V (via
+/// `CGEvent`, which uses the separate PostEvent privilege) is therefore the only
+/// viable way to insert text at the cursor in an arbitrary third-party app.
 ///
-/// ## Why AppKit / Accessibility APIs? (Modernization blocker)
-/// `AXUIElement`, `CGEvent`, and `NSPasteboard` are the only macOS APIs for inserting
-/// text at the cursor in arbitrary third-party apps. No SwiftUI or higher-level
-/// replacement exists. Unblocked if Apple ships an Input Method Kit alternative or
-/// a system-level text insertion API.
+/// **Validates Requirements**: 4.2, 4.5
 ///
 /// ## Privacy Guarantees (Requirement 11.4)
 ///
 /// - **No logging or persistence**: Transcribed text received by `insertText(_:)`
 ///   is used solely for immediate insertion into the frontmost application. The text
 ///   is never logged, written to disk, cached, or transmitted over any network.
-/// - **Clipboard restoration**: When the clipboard fallback path is used, the
-///   original pasteboard contents are restored within 2 seconds, ensuring the
-///   transcribed text does not linger on the system clipboard.
+/// - **Clipboard restoration**: The original pasteboard contents are restored
+///   within 2 seconds, ensuring the transcribed text does not linger on the
+///   system clipboard.
 /// - **No network connections**: This service uses only local macOS APIs
-///   (AXUIElement, NSPasteboard, CGEvent). No outbound network calls are made.
+///   (NSPasteboard, CGEvent). No outbound network calls are made.
 ///
 /// Note: This is @MainActor isolated because NSPasteboard and CGEvent APIs
 /// require main thread access.
@@ -56,176 +64,55 @@ final class TextInsertionService: TextInserting {
     /// so the 2-second window resets.
     private var pasteboardRestoreTask: Task<Void, Never>?
 
+    // MARK: - Injected Dependencies (production defaults)
+
+    /// Pasteboard used to stage text for the ⌘V paste. Injectable for tests.
+    private let pasteboard: any TextPasteboard
+
+    /// Delay before the original pasteboard is restored after a paste.
+    private let restoreDelay: Duration
+
+    /// Performs the ⌘V paste. Injectable so tests don't post real key events.
+    /// Returns `true` on success.
+    private let performPaste: @MainActor () -> Bool
+
+    // MARK: - Init
+
+    init(
+        pasteboard: any TextPasteboard = NSPasteboard.general,
+        restoreDelay: Duration = .seconds(2),
+        performPaste: (@MainActor () -> Bool)? = nil
+    ) {
+        self.pasteboard = pasteboard
+        self.restoreDelay = restoreDelay
+        // Default paste posts a real ⌘V; captured lazily to avoid referencing
+        // `self` before initialization completes.
+        self.performPaste = performPaste ?? { Self.postCommandV() }
+    }
+
     // MARK: - Public Interface
     
-    /// Inserts text at the current cursor position in the frontmost application.
+    /// Inserts text at the current cursor position in the frontmost application
+    /// via the clipboard + a simulated ⌘V keystroke, then restores the original
+    /// clipboard.
     ///
-    /// Attempts insertion via Accessibility API first. If that fails, falls back to
-    /// clipboard-based insertion with pasteboard restoration.
-    ///
-    /// **Validates**: Requirement 4.1 (Accessibility API primary), 4.2 (clipboard fallback)
+    /// **Validates**: Requirement 4.2 (clipboard insertion)
     ///
     /// - Parameter text: The text to insert
-    /// - Throws: `WisprError.textInsertionFailed` if both methods fail
+    /// - Throws: `WisprError.textInsertionFailed` if insertion fails
     func insertText(_ text: String) async throws {
-        // Try Accessibility API first (Requirement 4.1)
-        do {
-            try insertViaAccessibility(text)
-            return
-        } catch {
-            // Accessibility failed, fall back to clipboard (Requirement 4.2)
-            try await insertViaClipboard(text)
-        }
+        try await insertViaClipboard(text)
     }
-    
+
     // MARK: - Private Implementation
-    
-    /// Inserts text using macOS Accessibility APIs (AXUIElement).
-    ///
-    /// **Validates**: Requirement 4.1
-    ///
-    /// - Parameter text: The text to insert
-    /// - Throws: `WisprError.textInsertionFailed` if AX insertion fails
-    private func insertViaAccessibility(_ text: String) throws {
-        // Get the frontmost application
-        let systemWideElement = AXUIElementCreateSystemWide()
-        
-        var focusedApp: CFTypeRef?
-        let appResult = AXUIElementCopyAttributeValue(
-            systemWideElement,
-            kAXFocusedApplicationAttribute as CFString,
-            &focusedApp
-        )
-        
-        guard appResult == .success, let appElement = focusedApp else {
-            throw WisprError.textInsertionFailed("Could not get frontmost application")
-        }
-        
-        // Safely cast to AXUIElement
-        guard let appUIElement = castToAXUIElement(appElement) else {
-            throw WisprError.textInsertionFailed("Invalid application element type")
-        }
-        
-        // Get the focused UI element within the app
-        var focusedElement: CFTypeRef?
-        let elementResult = AXUIElementCopyAttributeValue(
-            appUIElement,
-            kAXFocusedUIElementAttribute as CFString,
-            &focusedElement
-        )
-        
-        guard elementResult == .success, let element = focusedElement else {
-            throw WisprError.textInsertionFailed("Could not get focused UI element")
-        }
-        
-        // Safely cast to AXUIElement
-        guard let focusedUIElement = castToAXUIElement(element) else {
-            throw WisprError.textInsertionFailed("Invalid focused element type")
-        }
-        
-        // Check if the element supports text insertion
-        var isSettable: DarwinBoolean = false
-        let settableResult = AXUIElementIsAttributeSettable(
-            focusedUIElement,
-            kAXValueAttribute as CFString,
-            &isSettable
-        )
-        
-        guard settableResult == .success, isSettable.boolValue else {
-            throw WisprError.textInsertionFailed("Focused element does not support text insertion")
-        }
-        
-        // Get current text value
-        var currentValue: CFTypeRef?
-        _ = AXUIElementCopyAttributeValue(
-            focusedUIElement,
-            kAXValueAttribute as CFString,
-            &currentValue
-        )
-        
-        let currentText = (currentValue as? String) ?? ""
-        
-        // Get current selection range to insert at cursor position.
-        // AX APIs report ranges in UTF-16 code units, so we must convert
-        // to String.Index via the utf16 view to handle emoji / non-BMP text.
-        var selectedRange: CFTypeRef?
-        let rangeResult = AXUIElementCopyAttributeValue(
-            focusedUIElement,
-            kAXSelectedTextRangeAttribute as CFString,
-            &selectedRange
-        )
-        
-        let utf16View = currentText.utf16
-        let utf16Offset: Int
-        if rangeResult == .success,
-           let range = selectedRange,
-           CFGetTypeID(range) == AXValueGetTypeID() {
-            let axValue = unsafeDowncast(range, to: AXValue.self)
-            if AXValueGetType(axValue) == .cfRange {
-                var cfRange = CFRange()
-                if AXValueGetValue(axValue, .cfRange, &cfRange) {
-                    utf16Offset = cfRange.location
-                } else {
-                    utf16Offset = utf16View.count
-                }
-            } else {
-                utf16Offset = utf16View.count
-            }
-        } else {
-            // If we can't get selection, append to end
-            utf16Offset = utf16View.count
-        }
-        
-        // Convert UTF-16 offset to String.Index safely
-        let clampedOffset = min(utf16Offset, utf16View.count)
-        let utf16Index = utf16View.index(utf16View.startIndex, offsetBy: clampedOffset)
-        guard let stringIndex = String.Index(utf16Index, within: currentText) else {
-            // Fallback: offset lands inside a surrogate pair — append to end
-            let newText = currentText + text
-            let insertResult = AXUIElementSetAttributeValue(
-                focusedUIElement,
-                kAXValueAttribute as CFString,
-                newText as CFTypeRef
-            )
-            guard insertResult == .success else {
-                throw WisprError.textInsertionFailed("Failed to set text value via Accessibility API")
-            }
-            return
-        }
-        
-        // Insert text at cursor position
-        let newText = String(currentText[..<stringIndex]) + text + String(currentText[stringIndex...])
-        
-        let insertResult = AXUIElementSetAttributeValue(
-            focusedUIElement,
-            kAXValueAttribute as CFString,
-            newText as CFTypeRef
-        )
-        
-        guard insertResult == .success else {
-            throw WisprError.textInsertionFailed("Failed to set text value via Accessibility API")
-        }
-        
-        // Move cursor to end of inserted text (UTF-16 offset for AX)
-        var newRange = CFRange(location: clampedOffset + text.utf16.count, length: 0)
-        if let rangeValue = AXValueCreate(.cfRange, &newRange) {
-            AXUIElementSetAttributeValue(
-                focusedUIElement,
-                kAXSelectedTextRangeAttribute as CFString,
-                rangeValue
-            )
-        }
-    }
-    
+
     /// Inserts text via clipboard by copying text and simulating ⌘V.
     ///
-    /// **Validates**: Requirement 4.2 (clipboard fallback), 4.5 (restore pasteboard)
+    /// **Validates**: Requirement 4.2 (clipboard insertion), 4.5 (restore pasteboard)
     ///
     /// - Parameter text: The text to insert
     /// - Throws: `WisprError.textInsertionFailed` if clipboard insertion fails
     private func insertViaClipboard(_ text: String) async throws {
-        let pasteboard = NSPasteboard.general
-
         // Save the user's original pasteboard only if we don't already have a
         // pending override. This prevents capturing our own transcription text
         // when insertViaClipboard is called again before the restore fires.
@@ -239,8 +126,19 @@ final class TextInsertionService: TextInserting {
             throw WisprError.textInsertionFailed("Failed to copy text to pasteboard")
         }
 
+        // Snapshot the change count now that OUR transcription is staged on the
+        // pasteboard, before we post ⌘V. If anything moves it before the restore
+        // fires (e.g. the user copies something new), we must not clobber that.
+        // (Bug: manual copy clobbered)
+        let expectedChangeCount = pasteboard.changeCount
+
+        // Log the overwrite without logging clipboard/transcription content
+        // (privacy guarantee: transcribed text is never logged).
+        Log.textInsertion.debug(
+            "Clipboard overwritten with transcription (\(text.count, privacy: .public) chars) for ⌘V paste")
+
         // Simulate ⌘V keystroke
-        let success = simulateCommandV()
+        let success = performPaste()
 
         guard success else {
             throw WisprError.textInsertionFailed("Failed to simulate ⌘V keystroke")
@@ -252,17 +150,32 @@ final class TextInsertionService: TextInserting {
         pasteboardRestoreTask?.cancel()
         pasteboardRestoreTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            await self.restorePasteboard(contentsToRestore, after: .seconds(2))
+            await self.restorePasteboard(
+                contentsToRestore,
+                after: self.restoreDelay,
+                ifChangeCountIs: expectedChangeCount
+            )
+            // Only the currently-active restore clears shared state. A superseded
+            // task (cancelled when a newer insertion rescheduled) must NOT nil these
+            // out — doing so drops the handle to the live task and lets the next
+            // insertion re-snapshot our own transcription as the "original".
+            guard !Task.isCancelled else { return }
             self.originalPasteboardContents = nil
             self.pasteboardRestoreTask = nil
         }
+    }
+
+    /// Awaits the currently-scheduled pasteboard restore, if any. Test hook so a
+    /// test can deterministically wait for the restore instead of sleeping.
+    func awaitPendingPasteboardRestore() async {
+        await pasteboardRestoreTask?.value
     }
     
     /// Saves the current pasteboard contents for later restoration.
     ///
     /// - Parameter pasteboard: The pasteboard to save
     /// - Returns: Dictionary mapping types to data
-    private func saveCurrentPasteboardContents(_ pasteboard: NSPasteboard) -> [NSPasteboard.PasteboardType: Data] {
+    private func saveCurrentPasteboardContents(_ pasteboard: any TextPasteboard) -> [NSPasteboard.PasteboardType: Data] {
         var contents: [NSPasteboard.PasteboardType: Data] = [:]
         
         for type in pasteboard.types ?? [] {
@@ -279,24 +192,46 @@ final class TextInsertionService: TextInserting {
     /// **Validates**: Requirement 4.5 (restore within 2 seconds)
     ///
     /// - Parameters:
-    ///   - contents: The saved pasteboard contents
-    ///   - delay: Duration to wait before restoring
-    private func restorePasteboard(_ contents: [NSPasteboard.PasteboardType: Data], after delay: Duration) async {
-        // Wait for the delay, but still restore even if cancelled
+    ///   - contents: The saved pasteboard contents (may be empty if the user's
+    ///     clipboard was empty before we overrode it).
+    ///   - delay: Duration to wait before restoring.
+    ///   - expectedChangeCount: The pasteboard `changeCount` captured right after
+    ///     we placed our transcription. If the pasteboard has changed since (the
+    ///     user copied something new), we leave it alone rather than clobbering
+    ///     their copy.
+    private func restorePasteboard(
+        _ contents: [NSPasteboard.PasteboardType: Data],
+        after delay: Duration,
+        ifChangeCountIs expectedChangeCount: Int
+    ) async {
+        // Wait for the restore window. If we're cancelled, a newer insertion has
+        // rescheduled and now owns the restore, so this superseded task must bow
+        // out rather than touch the pasteboard or emit misleading logs.
         do {
             try await Task.sleep(for: delay)
         } catch {
-            // Even if cancelled, fall through to restore the pasteboard
+            return
         }
-        
-        guard !contents.isEmpty else { return }
-        
-        let pasteboard = NSPasteboard.general
+
+        // If the user copied something after our paste, our transcription is no
+        // longer on the clipboard — don't overwrite their new content.
+        guard pasteboard.changeCount == expectedChangeCount else {
+            Log.textInsertion.debug(
+                "Clipboard changed since paste — skipping restore to preserve user's copy")
+            return
+        }
+
+        // Clear our transcription unconditionally, then restore the original
+        // contents. When the original was empty this leaves a clean clipboard
+        // rather than letting the transcribed text linger.
         pasteboard.clearContents()
-        
+
         for (type, data) in contents {
             pasteboard.setData(data, forType: type)
         }
+
+        Log.textInsertion.debug(
+            "Clipboard restored (\(contents.isEmpty ? "cleared — original was empty" : "original contents", privacy: .public))")
     }
     
     /// Simulates an Enter/Return keystroke using CGEvent.
@@ -330,7 +265,7 @@ final class TextInsertionService: TextInserting {
     /// Simulates a ⌘V keystroke using CGEvent.
     ///
     /// - Returns: `true` if the keystroke was successfully posted
-    private func simulateCommandV() -> Bool {
+    private static func postCommandV() -> Bool {
         // Create key down event for ⌘V
         guard let keyDownEvent = CGEvent(
             keyboardEventSource: nil,

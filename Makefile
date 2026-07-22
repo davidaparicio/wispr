@@ -22,7 +22,44 @@ API_KEY_PATH   := $(API_KEYS_DIR)/AuthKey_$(API_KEY_ID).p8
 APP_PATH          := $(EXPORT_DIR)/Wispr.app
 ZIP_PATH          := $(EXPORT_DIR)/wispr-notarized.zip
 
-.PHONY: help test bump-build archive upload notarize brew-release brew-clean list-downloads clean-downloads list-container list-prefs clean-prefs reset-permissions reset-login-item reset-onboarding
+# pkg installer (see .kiro/specs/pkg-installer)
+# INSTALLER_IDENTITY is the only new secret — the Developer ID Installer certificate
+# name, added to the existing secrets/asc-api-key.json. App signing itself is automatic
+# Developer ID via ExportOptionsHomebrew.plist (handled by the `notarize` target).
+#
+# secrets/asc-api-key.json schema (git-ignored, never committed):
+#   {
+#     "apple_api_key_id":    "[key_id]",
+#     "apple_api_issuer_id": "[issuer_id]",
+#     "apple_api_key":       "[base64-encoded .p8 key]",
+#     "installer_identity":  "Developer ID Installer: [name] ([team_id])"
+#   }
+# The first three fields are used by notarytool; `installer_identity` (new) is
+# used by `productsign` in the `pkg` target.
+INSTALLER_IDENTITY := $(shell jq -r '.installer_identity // empty' $(SECRETS_JSON) 2>/dev/null)
+COMPONENT_PKG      := $(EXPORT_DIR)/wispr-component.pkg
+PRODUCT_PKG        := $(EXPORT_DIR)/wispr-unsigned.pkg
+SIGNED_PKG         := $(EXPORT_DIR)/wispr-signed.pkg
+PKG_RESOURCES      := $(CURDIR)/pkg/resources
+DISTRIBUTION_XML   := $(CURDIR)/pkg/distribution.xml
+# VERSION: a caller-supplied value (make pkg VERSION=x.y.z or pkg-release) always wins;
+# otherwise fall back to the project's current MARKETING_VERSION so the output filename
+# and package version stay deterministic.
+VERSION ?= $(shell grep -m1 'MARKETING_VERSION' $(XCODEPROJ)/project.pbxproj | sed 's/.*= *//;s/;.*//')
+FINAL_PKG          := $(EXPORT_DIR)/wispr-$(VERSION).pkg
+
+# Reusable guard: VERSION must be non-empty AND a safe version token before it is
+# interpolated into filenames, sed patterns, and pkgbuild args. Rejects spaces,
+# slashes, quotes, and sed metacharacters (e.g. a stray `/` would change the
+# meaning of `sed 's/.../.../'`). Allowed: digits, dots, and an optional
+# alphanumeric/hyphen prerelease suffix (e.g. 1.2.3 or 0.0.1-test).
+define check-version
+	@test -n "$(VERSION)" || { echo "Error: VERSION is empty; pass VERSION=x.y.z"; exit 1; }
+	@printf '%s' '$(VERSION)' | grep -Eq '^[0-9]+(\.[0-9]+)*(-[0-9A-Za-z.]+)?$$' || \
+		{ echo "Error: VERSION '$(VERSION)' is not a valid version (expected e.g. 1.2.3 or 0.0.1-test)"; exit 1; }
+endef
+
+.PHONY: help test bump-build archive upload notarize pkg pkg-release brew-release release brew-clean list-downloads clean-downloads list-container list-prefs clean-prefs reset-permissions reset-login-item reset-onboarding _setup-api-key _cleanup-api-key _commit-and-tag _generate-cask
 
 _setup-api-key:
 	@test -f "$(SECRETS_JSON)" || { echo "Error: $(SECRETS_JSON) not found"; exit 1; }
@@ -31,6 +68,60 @@ _setup-api-key:
 
 _cleanup-api-key:
 	@rm -f $(API_KEY_PATH)
+
+# Commit the version + build-number bump and tag it, so the tag points at
+# reachable history whose embedded version matches the released artifact.
+# Idempotent for re-runs of the SAME release: the commit is skipped if nothing
+# is staged, and an existing tag is accepted only if it already points at HEAD.
+# If the tag exists but points elsewhere, fail loudly rather than uploading new
+# artifacts to a stale release/commit (mismatched artifact vs. source).
+_commit-and-tag:
+	@test -n "$(VERSION)" || { echo "Error: VERSION not set for _commit-and-tag"; exit 1; }
+	$(eval TAG := v$(VERSION))
+	@echo "📌 Committing version bump…"
+	@git add $(XCODEPROJ)/project.pbxproj
+	@git diff --cached --quiet || git commit --no-verify -m "chore: release $(TAG)"
+	@git push --no-verify origin HEAD
+	@echo "🏷️  Tagging $(TAG)…"
+	@if git rev-parse -q --verify "refs/tags/$(TAG)" >/dev/null; then \
+		test "$$(git rev-parse "$(TAG)^{commit}")" = "$$(git rev-parse HEAD)" || \
+			{ echo "Error: tag $(TAG) already exists and points at a different commit than HEAD — refusing to release mismatched artifacts. Delete/move the tag or bump VERSION."; exit 1; }; \
+		echo "Tag $(TAG) already at HEAD; reusing it."; \
+	else \
+		git tag "$(TAG)"; \
+	fi
+	@git push --no-verify origin "$(TAG)"
+
+# Generate the Homebrew cask from the released .zip and push it to the tap.
+# Expects the v$(VERSION) GitHub release + wispr-$(VERSION).zip asset to exist.
+_generate-cask:
+	@test -n "$(VERSION)" || { echo "Error: VERSION not set for _generate-cask"; exit 1; }
+	@test -d "../homebrew-macos" || { echo "Error: ../homebrew-macos not found"; exit 1; }
+	$(eval TAG := v$(VERSION))
+	$(eval ZIP_NAME := wispr-$(VERSION).zip)
+	$(eval URL := https://github.com/sebsto/wispr/releases/download/$(TAG)/$(ZIP_NAME))
+	@echo "🍺 Generating cask..."
+	@echo "cask \"wispr\" do" > wispr.rb
+	@echo "  version \"$(VERSION)\"" >> wispr.rb
+	@echo "  sha256 \"$$(shasum -a 256 $(EXPORT_DIR)/$(ZIP_NAME) | awk '{print $$1}')\"" >> wispr.rb
+	@echo "" >> wispr.rb
+	@echo "  url \"$(URL)\"" >> wispr.rb
+	@echo "  name \"Wispr\"" >> wispr.rb
+	@echo "  desc \"Local speech-to-text transcription powered by OpenAI Whisper\"" >> wispr.rb
+	@echo "  homepage \"https://github.com/sebsto/wispr\"" >> wispr.rb
+	@echo "" >> wispr.rb
+	@echo "  app \"Wispr.app\"" >> wispr.rb
+	@echo "end" >> wispr.rb
+	@echo "📦 Updating homebrew tap..."
+	@cd ../homebrew-macos && git pull --rebase origin main
+	@mkdir -p ../homebrew-macos/Casks
+	@cp wispr.rb ../homebrew-macos/Casks/
+	@# Gate the commit on staged changes so re-running with an unchanged cask
+	@# is idempotent (matches _commit-and-tag) instead of failing "nothing to commit".
+	@cd ../homebrew-macos && git add Casks/wispr.rb && \
+		{ git diff --cached --quiet || git commit -m "Update wispr to $(VERSION)"; } && \
+		git push --no-verify origin main
+	@rm -f wispr.rb
 
 bump-build: ## Set build number (CFBundleVersion) to git commit count
 	$(eval BUILD_NUM := $(shell date +%y%m%d).$(shell git rev-list --count HEAD))
@@ -86,6 +177,75 @@ notarize: archive _setup-api-key ## Archive, export with Developer ID, notarize,
 	@spctl -a -vvv -t install "$(APP_PATH)"
 	@$(MAKE) _cleanup-api-key
 
+pkg: notarize ## Build a signed, notarized .pkg installer (reuses notarize; VERSION optional)
+	@echo "🔎 Validating installer resources…"
+	@for f in "$(DISTRIBUTION_XML)" "$(PKG_RESOURCES)/background.png" "$(PKG_RESOURCES)/background-darkAqua.png" "$(PKG_RESOURCES)/welcome.html" "$(PKG_RESOURCES)/readme.html" "$(PKG_RESOURCES)/license.txt"; do \
+		test -f "$$f" || { echo "Error: missing installer resource: $$f"; exit 1; }; \
+	done
+	@echo "🔒 Checking secrets are not tracked by git…"
+	@# Match a repo-relative path so this is robust across git versions (some
+	@# treat an absolute path outside the cwd differently). --error-unmatch
+	@# exits non-zero when the file is NOT tracked — the desired state.
+	@git ls-files --error-unmatch "$(SECRETS_JSON:$(CURDIR)/%=%)" >/dev/null 2>&1 && \
+		{ echo "Error: $(SECRETS_JSON) is tracked by git — remove it from version control before releasing"; exit 1; } || true
+	@# Check jq first: INSTALLER_IDENTITY is populated via `jq`, so a missing jq
+	@# would otherwise surface as a misleading "installer_identity not found".
+	@command -v jq >/dev/null || { echo "Error: jq is not installed (brew install jq)"; exit 1; }
+	@test -n "$(INSTALLER_IDENTITY)" || { echo "Error: installer_identity not found in $(SECRETS_JSON)"; exit 1; }
+	@security find-identity -v -p basic | grep -qF "$(INSTALLER_IDENTITY)" || \
+		{ echo 'Error: certificate "$(INSTALLER_IDENTITY)" not found in keychain'; exit 1; }
+	$(check-version)
+	@echo "📦 Building component package (version $(VERSION))…"
+	@pkgbuild --component "$(APP_PATH)" \
+		--install-location /Applications \
+		--identifier $(BUNDLE_ID) \
+		--version $(VERSION) \
+		"$(COMPONENT_PKG)" || { echo "Error: pkgbuild failed"; exit 1; }
+	@echo "🏗️  Building product package with custom UI…"
+	@sed 's/__VERSION__/$(VERSION)/g' "$(DISTRIBUTION_XML)" > "$(EXPORT_DIR)/distribution.xml"
+	@productbuild --distribution "$(EXPORT_DIR)/distribution.xml" \
+		--resources "$(PKG_RESOURCES)" \
+		--package-path "$(EXPORT_DIR)" \
+		"$(PRODUCT_PKG)" || { echo "Error: productbuild failed"; exit 1; }
+	@echo "✍️  Signing product package…"
+	@productsign --sign "$(INSTALLER_IDENTITY)" "$(PRODUCT_PKG)" "$(SIGNED_PKG)" || \
+		{ echo "Error: productsign failed"; exit 1; }
+	@echo "📤 Notarizing, stapling, and verifying the .pkg…"
+	@# The decrypted .p8 key is created here (only notarytool needs it) and a
+	@# trap removes it on ANY exit of this shell — success or failure — so a
+	@# failed notarize/staple/verify never leaves the sensitive key on disk.
+	@test -f "$(SECRETS_JSON)" || { echo "Error: $(SECRETS_JSON) not found"; exit 1; }
+	@sh -c 'trap "rm -f \"$(API_KEY_PATH)\"" EXIT; \
+		mkdir -p "$(API_KEYS_DIR)"; \
+		jq -r .apple_api_key "$(SECRETS_JSON)" | base64 -d > "$(API_KEY_PATH)"; \
+		test -s "$(API_KEY_PATH)" || { echo "Error: decoded API key is empty (missing .apple_api_key in $(SECRETS_JSON)?)"; exit 1; }; \
+		xcrun notarytool submit "$(SIGNED_PKG)" \
+			--key "$(API_KEY_PATH)" \
+			--key-id "$(API_KEY_ID)" \
+			--issuer "$(API_ISSUER)" \
+			--wait || { echo "Error: notarization failed. Check the log URL above"; exit 1; }; \
+		xcrun stapler staple "$(SIGNED_PKG)" || { echo "Error: stapler failed"; exit 1; }; \
+		spctl -a -vvv -t install "$(SIGNED_PKG)"'
+	@mv "$(SIGNED_PKG)" "$(FINAL_PKG)"
+	@echo "✅ Installer ready: $(FINAL_PKG)"
+
+pkg-release: ## Upload only the .pkg to GitHub Releases (usage: make pkg-release VERSION=1.0.0). Note: the build also produces the Homebrew zip; use `release` to publish both + the cask.
+	$(check-version)
+	@command -v gh >/dev/null || { echo "Error: gh CLI not installed"; exit 1; }
+	$(eval TAG := v$(VERSION))
+	@echo "📝 Setting version to $(VERSION)…"
+	@sed -i '' 's/MARKETING_VERSION = [^;]*/MARKETING_VERSION = $(VERSION)/g' $(XCODEPROJ)/project.pbxproj
+	@$(MAKE) pkg VERSION=$(VERSION)
+	@$(MAKE) _commit-and-tag VERSION=$(VERSION)
+	@echo "🏷️  Creating GitHub release $(TAG)…"
+	@# One release per version, multiple artifacts: if the tag already has a release
+	@# (e.g. brew-release uploaded the .zip), `create` fails and we `upload` the .pkg
+	@# alongside the existing assets. --clobber only replaces the same-named .pkg on
+	@# re-runs; it never touches the .zip or other differently-named assets.
+	@gh release create $(TAG) --generate-notes "$(FINAL_PKG)" || \
+		gh release upload $(TAG) "$(FINAL_PKG)" --clobber
+	@echo "✅ Release $(VERSION) complete: $(FINAL_PKG)"
+
 brew-clean: ## Clean up existing release tags, GitHub release, and homebrew cask (usage: make brew-clean VERSION=1.0.0)
 	@test -n "$(VERSION)" || { echo "Usage: make brew-clean VERSION=1.0.0"; exit 1; }
 	$(eval TAG := v$(VERSION))
@@ -102,8 +262,8 @@ brew-clean: ## Clean up existing release tags, GitHub release, and homebrew cask
 	fi
 	@echo "✅ Cleanup complete"
 
-brew-release: ## Create Homebrew cask release (usage: make brew-release VERSION=1.0.0)
-	@test -n "$(VERSION)" || { echo "Usage: make brew-release VERSION=1.0.0"; exit 1; }
+brew-release: ## Create Homebrew cask release only (usage: make brew-release VERSION=1.0.0). For both .pkg + Homebrew, use `release`.
+	$(check-version)
 	@test -d "../homebrew-macos" || { echo "Error: ../homebrew-macos not found"; exit 1; }
 	@command -v gh >/dev/null || { echo "Error: gh CLI not installed"; exit 1; }
 	$(eval TAG := v$(VERSION))
@@ -113,34 +273,35 @@ brew-release: ## Create Homebrew cask release (usage: make brew-release VERSION=
 	@$(MAKE) notarize
 	@echo "🗜️  Creating release zip..."
 	@cp "$(ZIP_PATH)" "$(EXPORT_DIR)/$(ZIP_NAME)"
+	@$(MAKE) _commit-and-tag VERSION=$(VERSION)
 	@echo "🏷️  Creating GitHub release..."
-	@git tag $(TAG) || true
-	@git push --no-verify origin $(TAG) || true
 	@gh release create $(TAG) --generate-notes $(EXPORT_DIR)/$(ZIP_NAME) || \
-		gh release upload $(TAG) $(EXPORT_DIR)/$(ZIP_NAME)
-	$(eval URL := https://github.com/sebsto/wispr/releases/download/$(TAG)/$(ZIP_NAME))
-	@echo "🍺 Generating cask..."
-	@echo "cask \"wispr\" do" > wispr.rb
-	@echo "  version \"$(VERSION)\"" >> wispr.rb
-	@echo "  sha256 \"$$(shasum -a 256 $(EXPORT_DIR)/$(ZIP_NAME) | awk '{print $$1}')\"" >> wispr.rb
-	@echo "" >> wispr.rb
-	@echo "  url \"$(URL)\"" >> wispr.rb
-	@echo "  name \"Wispr\"" >> wispr.rb
-	@echo "  desc \"Local speech-to-text transcription powered by OpenAI Whisper\"" >> wispr.rb
-	@echo "  homepage \"https://github.com/sebsto/wispr\"" >> wispr.rb
-	@echo "" >> wispr.rb
-	@echo "  app \"Wispr.app\"" >> wispr.rb
-	@echo "end" >> wispr.rb
-	@echo "📦 Updating homebrew tap..."
-	@cd ../homebrew-macos && git pull --rebase origin main
-	@mkdir -p ../homebrew-macos/Casks
-	@cd ../homebrew-macos && git pull
-	@cp wispr.rb ../homebrew-macos/Casks/
-	@cd ../homebrew-macos && git add Casks/wispr.rb && \
-		git commit -m "Update wispr to $(VERSION)" && \
-		git push --no-verify origin main
-	@rm -f wispr.rb
+		gh release upload $(TAG) $(EXPORT_DIR)/$(ZIP_NAME) --clobber
+	@$(MAKE) _generate-cask VERSION=$(VERSION)
 	@echo "✅ Release $(VERSION) complete!"
+
+release: ## Release BOTH .pkg and Homebrew cask under one version (usage: make release VERSION=1.0.0)
+	$(check-version)
+	@test -d "../homebrew-macos" || { echo "Error: ../homebrew-macos not found"; exit 1; }
+	@command -v gh >/dev/null || { echo "Error: gh CLI not installed"; exit 1; }
+	$(eval TAG := v$(VERSION))
+	$(eval ZIP_NAME := wispr-$(VERSION).zip)
+	@echo "📝 Setting version to $(VERSION)…"
+	@sed -i '' 's/MARKETING_VERSION = [^;]*/MARKETING_VERSION = $(VERSION)/g' $(XCODEPROJ)/project.pbxproj
+	@# `pkg` depends on `notarize`, which produces both the stapled app and the
+	@# Homebrew .zip — so one notarization round-trip yields both artifacts.
+	@$(MAKE) pkg VERSION=$(VERSION)
+	@echo "🗜️  Creating release zip..."
+	@cp "$(ZIP_PATH)" "$(EXPORT_DIR)/$(ZIP_NAME)"
+	@# Bump / commit / tag exactly once for both artifacts.
+	@$(MAKE) _commit-and-tag VERSION=$(VERSION)
+	@echo "🏷️  Creating GitHub release $(TAG) with both artifacts…"
+	@gh release create $(TAG) --generate-notes "$(FINAL_PKG)" "$(EXPORT_DIR)/$(ZIP_NAME)" || { \
+		gh release upload $(TAG) "$(FINAL_PKG)" --clobber; \
+		gh release upload $(TAG) "$(EXPORT_DIR)/$(ZIP_NAME)" --clobber; \
+	}
+	@$(MAKE) _generate-cask VERSION=$(VERSION)
+	@echo "✅ Release $(VERSION) complete: .pkg + Homebrew cask under $(TAG)"
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \

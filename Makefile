@@ -47,6 +47,10 @@ DISTRIBUTION_XML   := $(CURDIR)/pkg/distribution.xml
 # and package version stay deterministic.
 VERSION ?= $(shell grep -m1 'MARKETING_VERSION' $(XCODEPROJ)/project.pbxproj | sed 's/.*= *//;s/;.*//')
 FINAL_PKG          := $(EXPORT_DIR)/wispr-$(VERSION).pkg
+# Stable-named copy of the installer. Uploaded alongside the versioned .pkg so the
+# website can link to the fixed URL releases/latest/download/Wispr.pkg (no GitHub
+# API call, no rate limit, always the newest release).
+STABLE_PKG         := $(EXPORT_DIR)/Wispr.pkg
 
 # Reusable guard: VERSION must be non-empty AND a safe version token before it is
 # interpolated into filenames, sed patterns, and pkgbuild args. Rejects spaces,
@@ -238,12 +242,17 @@ pkg-release: ## Upload only the .pkg to GitHub Releases (usage: make pkg-release
 	@$(MAKE) pkg VERSION=$(VERSION)
 	@$(MAKE) _commit-and-tag VERSION=$(VERSION)
 	@echo "🏷️  Creating GitHub release $(TAG)…"
+	@# Also publish a stable-named copy so the website can link to
+	@# releases/latest/download/Wispr.pkg without a GitHub API call.
+	@cp "$(FINAL_PKG)" "$(STABLE_PKG)"
 	@# One release per version, multiple artifacts: if the tag already has a release
 	@# (e.g. brew-release uploaded the .zip), `create` fails and we `upload` the .pkg
-	@# alongside the existing assets. --clobber only replaces the same-named .pkg on
+	@# alongside the existing assets. --clobber only replaces the same-named asset on
 	@# re-runs; it never touches the .zip or other differently-named assets.
-	@gh release create $(TAG) --generate-notes "$(FINAL_PKG)" || \
-		gh release upload $(TAG) "$(FINAL_PKG)" --clobber
+	@gh release create $(TAG) --generate-notes "$(FINAL_PKG)" "$(STABLE_PKG)" || { \
+		gh release upload $(TAG) "$(FINAL_PKG)" --clobber; \
+		gh release upload $(TAG) "$(STABLE_PKG)" --clobber; \
+	}
 	@echo "✅ Release $(VERSION) complete: $(FINAL_PKG)"
 
 brew-clean: ## Clean up existing release tags, GitHub release, and homebrew cask (usage: make brew-clean VERSION=1.0.0)
@@ -295,9 +304,12 @@ release: ## Release BOTH .pkg and Homebrew cask under one version (usage: make r
 	@cp "$(ZIP_PATH)" "$(EXPORT_DIR)/$(ZIP_NAME)"
 	@# Bump / commit / tag exactly once for both artifacts.
 	@$(MAKE) _commit-and-tag VERSION=$(VERSION)
+	@# Stable-named copy so the website can link to releases/latest/download/Wispr.pkg.
+	@cp "$(FINAL_PKG)" "$(STABLE_PKG)"
 	@echo "🏷️  Creating GitHub release $(TAG) with both artifacts…"
-	@gh release create $(TAG) --generate-notes "$(FINAL_PKG)" "$(EXPORT_DIR)/$(ZIP_NAME)" || { \
+	@gh release create $(TAG) --generate-notes "$(FINAL_PKG)" "$(STABLE_PKG)" "$(EXPORT_DIR)/$(ZIP_NAME)" || { \
 		gh release upload $(TAG) "$(FINAL_PKG)" --clobber; \
+		gh release upload $(TAG) "$(STABLE_PKG)" --clobber; \
 		gh release upload $(TAG) "$(EXPORT_DIR)/$(ZIP_NAME)" --clobber; \
 	}
 	@$(MAKE) _generate-cask VERSION=$(VERSION)

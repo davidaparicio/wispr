@@ -12,74 +12,31 @@ document.querySelectorAll('a[href^="#"]').forEach(anchor => {
     });
 });
 
-// Fetch latest release from GitHub
+// Enrich the version label from the GitHub API. The download button itself is a
+// STATIC link to releases/latest/download/Wispr.pkg (set in the HTML), so the
+// download works even if this fetch fails/rate-limits — we only decorate the
+// version text and never touch the button's href.
 async function fetchLatestRelease() {
+    const versionInfo = document.getElementById('version-info');
     try {
         const response = await fetch('https://api.github.com/repos/sebsto/wispr/releases/latest');
-        
-        // Check if response is OK (status 200-299)
         if (!response.ok) {
             throw new Error(`GitHub API returned ${response.status}: ${response.statusText}`);
         }
-        
         const data = await response.json();
 
-        const pkgDownloadLink = document.getElementById('pkg-download-link');
-        const pkgDownloadText = document.getElementById('pkg-download-text');
-        const versionInfo = document.getElementById('version-info');
-        const footerDownloadLink = document.querySelector('.footer-links a[href*="releases"]');
+        const pkg = (data.assets || []).find(a => a.name.endsWith('.pkg') && a.name !== 'Wispr.pkg')
+            || (data.assets || []).find(a => a.name === 'Wispr.pkg');
 
-        // Only direct-download a double-clickable installer (.pkg preferred, .dmg accepted).
-        // Anything else (e.g. a Homebrew .zip) is NOT presented as "the .pkg installer" —
-        // fall back to the release page instead.
-        const installerAsset = data.assets && data.assets.length > 0
-            ? (data.assets.find(a => a.name.endsWith('.pkg')) || data.assets.find(a => a.name.endsWith('.dmg')))
-            : null;
-
-        if (installerAsset) {
-            const downloadUrl = installerAsset.browser_download_url;
-            const kind = installerAsset.name.endsWith('.pkg') ? '.pkg installer' : '.dmg';
-
-            // Direct file download (GitHub serves the asset with Content-Disposition:
-            // attachment), so keep `download` and stay in the same tab.
-            if (pkgDownloadLink) {
-                pkgDownloadLink.href = downloadUrl;
-                pkgDownloadLink.setAttribute('download', '');
-                pkgDownloadLink.removeAttribute('target');
-            }
-            if (pkgDownloadText) pkgDownloadText.textContent = `Download the ${kind} (${data.tag_name})`;
-            if (versionInfo) versionInfo.textContent = `Latest: ${data.tag_name} • ${(installerAsset.size / 1024 / 1024).toFixed(1)} MB`;
-            if (footerDownloadLink) footerDownloadLink.href = downloadUrl;
-        } else {
-            // No installer asset yet — link to the releases page (a page, not a file),
-            // so drop `download` and open in a new tab.
-            if (pkgDownloadLink) {
-                pkgDownloadLink.href = data.html_url;
-                pkgDownloadLink.removeAttribute('download');
-                pkgDownloadLink.setAttribute('target', '_blank');
-                pkgDownloadLink.setAttribute('rel', 'noopener noreferrer');
-            }
-            if (pkgDownloadText) pkgDownloadText.textContent = `View ${data.tag_name} on GitHub`;
-            if (versionInfo) versionInfo.textContent = `Latest: ${data.tag_name}`;
-            if (footerDownloadLink) footerDownloadLink.href = data.html_url;
+        if (versionInfo) {
+            versionInfo.textContent = pkg
+                ? `Latest: ${data.tag_name} • ${(pkg.size / 1024 / 1024).toFixed(1)} MB`
+                : `Latest: ${data.tag_name}`;
         }
     } catch (error) {
         console.error('Failed to fetch latest release:', error);
-        const pkgDownloadLink = document.getElementById('pkg-download-link');
-        const pkgDownloadText = document.getElementById('pkg-download-text');
-        const versionInfo = document.getElementById('version-info');
-        const footerDownloadLink = document.querySelector('.footer-links a[href*="releases"]');
-
-        const fallbackUrl = 'https://github.com/sebsto/wispr/releases/latest';
-        if (pkgDownloadLink) {
-            pkgDownloadLink.href = fallbackUrl;
-            pkgDownloadLink.removeAttribute('download');
-            pkgDownloadLink.setAttribute('target', '_blank');
-            pkgDownloadLink.setAttribute('rel', 'noopener noreferrer');
-        }
-        if (pkgDownloadText) pkgDownloadText.textContent = 'View releases on GitHub';
-        if (versionInfo) versionInfo.textContent = 'View releases on GitHub';
-        if (footerDownloadLink) footerDownloadLink.href = fallbackUrl;
+        // Leave the static button intact; just soften the version label.
+        if (versionInfo) versionInfo.textContent = 'Latest release on GitHub';
     }
 }
 

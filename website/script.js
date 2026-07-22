@@ -26,38 +26,40 @@ async function fetchLatestRelease() {
 
         const pkgDownloadLink = document.getElementById('pkg-download-link');
         const pkgDownloadText = document.getElementById('pkg-download-text');
-        const pkgInstallNote = document.getElementById('pkg-install-note');
         const versionInfo = document.getElementById('version-info');
         const footerDownloadLink = document.querySelector('.footer-links a[href*="releases"]');
 
         // Only direct-download a double-clickable installer (.pkg preferred, .dmg accepted).
         // Anything else (e.g. a Homebrew .zip) is NOT presented as "the .pkg installer" —
-        // fall back to the release page and relabel the button so the copy stays truthful.
+        // fall back to the release page instead.
         const installerAsset = data.assets && data.assets.length > 0
             ? (data.assets.find(a => a.name.endsWith('.pkg')) || data.assets.find(a => a.name.endsWith('.dmg')))
             : null;
 
         if (installerAsset) {
             const downloadUrl = installerAsset.browser_download_url;
-            const isPkg = installerAsset.name.endsWith('.pkg');
-            const kind = isPkg ? '.pkg installer' : '.dmg';
-            // Keep the install note in sync with the asset kind so the instructions
-            // are accurate for whichever installer the release actually ships.
-            const note = isPkg
-                ? 'Signed & notarized by Apple. Passes Gatekeeper and installs straight to /Applications — just double-click.'
-                : 'Signed & notarized by Apple. Open the disk image and drag Wispr to your Applications folder.';
+            const kind = installerAsset.name.endsWith('.pkg') ? '.pkg installer' : '.dmg';
 
-            if (pkgDownloadLink) pkgDownloadLink.href = downloadUrl;
+            // Direct file download (GitHub serves the asset with Content-Disposition:
+            // attachment), so keep `download` and stay in the same tab.
+            if (pkgDownloadLink) {
+                pkgDownloadLink.href = downloadUrl;
+                pkgDownloadLink.setAttribute('download', '');
+                pkgDownloadLink.removeAttribute('target');
+            }
             if (pkgDownloadText) pkgDownloadText.textContent = `Download the ${kind} (${data.tag_name})`;
-            if (pkgInstallNote) pkgInstallNote.textContent = note;
             if (versionInfo) versionInfo.textContent = `Latest: ${data.tag_name} • ${(installerAsset.size / 1024 / 1024).toFixed(1)} MB`;
             if (footerDownloadLink) footerDownloadLink.href = downloadUrl;
         } else {
-            // No installer asset yet — link to the releases page, not a non-installer asset,
-            // and drop the "signed .pkg" note since we can't offer a direct installer.
-            if (pkgDownloadLink) pkgDownloadLink.href = data.html_url;
+            // No installer asset yet — link to the releases page (a page, not a file),
+            // so drop `download` and open in a new tab.
+            if (pkgDownloadLink) {
+                pkgDownloadLink.href = data.html_url;
+                pkgDownloadLink.removeAttribute('download');
+                pkgDownloadLink.setAttribute('target', '_blank');
+                pkgDownloadLink.setAttribute('rel', 'noopener noreferrer');
+            }
             if (pkgDownloadText) pkgDownloadText.textContent = `View ${data.tag_name} on GitHub`;
-            if (pkgInstallNote) pkgInstallNote.textContent = 'Download the latest release from GitHub.';
             if (versionInfo) versionInfo.textContent = `Latest: ${data.tag_name}`;
             if (footerDownloadLink) footerDownloadLink.href = data.html_url;
         }
@@ -65,15 +67,17 @@ async function fetchLatestRelease() {
         console.error('Failed to fetch latest release:', error);
         const pkgDownloadLink = document.getElementById('pkg-download-link');
         const pkgDownloadText = document.getElementById('pkg-download-text');
-        const pkgInstallNote = document.getElementById('pkg-install-note');
         const versionInfo = document.getElementById('version-info');
         const footerDownloadLink = document.querySelector('.footer-links a[href*="releases"]');
 
         const fallbackUrl = 'https://github.com/sebsto/wispr/releases/latest';
-        if (pkgDownloadLink) pkgDownloadLink.href = fallbackUrl;
-        // Relabel button + note so neither claims a signed ".pkg installer" while pointing at the releases page.
+        if (pkgDownloadLink) {
+            pkgDownloadLink.href = fallbackUrl;
+            pkgDownloadLink.removeAttribute('download');
+            pkgDownloadLink.setAttribute('target', '_blank');
+            pkgDownloadLink.setAttribute('rel', 'noopener noreferrer');
+        }
         if (pkgDownloadText) pkgDownloadText.textContent = 'View releases on GitHub';
-        if (pkgInstallNote) pkgInstallNote.textContent = 'Download the latest release from GitHub.';
         if (versionInfo) versionInfo.textContent = 'View releases on GitHub';
         if (footerDownloadLink) footerDownloadLink.href = fallbackUrl;
     }

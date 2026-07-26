@@ -1,7 +1,8 @@
 import AVFAudio
-import AppKit
 import ApplicationServices
 import Foundation
+import WisprCore
+import os
 
 /// Manages microphone and accessibility permissions for the Wispr application.
 /// This class checks permission status, requests permissions, and monitors changes.
@@ -20,6 +21,13 @@ final class PermissionManager {
     var allPermissionsGranted: Bool {
         microphoneStatus == .authorized && accessibilityStatus == .authorized
     }
+
+    // MARK: - Dependencies
+
+    /// Closure that opens a URL using the system handler.
+    /// Injected to avoid importing AppKit in this file.
+    /// Defaults to opening via NSWorkspace when provided by the app delegate.
+    var openURLHandler: (@MainActor (URL) -> Void)?
 
     // MARK: - Initialization
 
@@ -71,28 +79,34 @@ final class PermissionManager {
         return microphoneStatus == .authorized
     }
 
-    /// Opens System Settings to the Accessibility privacy pane
-    /// This is required because accessibility permission cannot be requested programmatically
+    /// Opens System Settings to the Accessibility privacy pane.
+    /// This is required because accessibility permission cannot be requested programmatically.
     func openAccessibilitySettings() {
-        // Open System Settings to Privacy & Security > Accessibility
         guard
             let url = URL(
                 string:
                     "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
         else { return }
-        NSWorkspace.shared.open(url)
+        guard let handler = openURLHandler else {
+            Log.app.warning("PermissionManager — openURLHandler not wired, cannot open Accessibility settings")
+            return
+        }
+        handler(url)
     }
 
-    /// Opens System Settings to the Microphone privacy pane
-    /// This allows the user to re-enable microphone access if they previously denied it
+    /// Opens System Settings to the Microphone privacy pane.
+    /// This allows the user to re-enable microphone access if they previously denied it.
     func openMicrophoneSettings() {
-        // Open System Settings to Privacy & Security > Microphone
         guard
             let url = URL(
                 string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
             )
         else { return }
-        NSWorkspace.shared.open(url)
+        guard let handler = openURLHandler else {
+            Log.app.warning("PermissionManager — openURLHandler not wired, cannot open Microphone settings")
+            return
+        }
+        handler(url)
     }
 
     // MARK: - Permission Monitoring

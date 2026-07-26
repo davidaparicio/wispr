@@ -74,6 +74,8 @@ struct SettingsView: View {
             "When enabled, the meeting transcript labels remote participants as Speaker 1, Speaker 2, and so on using on-device diarization"
         static let meetingEchoSuppression =
             "When enabled, speech from remote participants that leaks into your microphone is not transcribed a second time as your own speech"
+        static let openTranscriptsFolder =
+            "Opens the folder where saved meeting transcripts are stored in Finder"
 
         // General section
         static let launchAtLogin = "When enabled, Wispr starts automatically when you log in"
@@ -86,6 +88,7 @@ struct SettingsView: View {
     @Environment(HotkeyMonitor.self) private var hotkeyMonitor: HotkeyMonitor
     @Environment(TextCorrectionService.self) private var textCorrectionService:
         TextCorrectionService
+    @Environment(\.openURL) private var openURL
 
     @State private var audioDevices: [AudioInputDevice] = []
     @State private var whisperModels: [ModelInfo] = []
@@ -403,6 +406,24 @@ struct SettingsView: View {
             )
             .font(.caption)
             .foregroundStyle(theme.secondaryTextColor)
+
+            Divider()
+
+            HStack {
+                Text("Saved Transcripts")
+                    .foregroundStyle(theme.primaryTextColor)
+                Spacer()
+                Button("Open Folder") {
+                    openTranscriptsFolder()
+                }
+                .accessibilityHint(AccessibilityHints.openTranscriptsFolder)
+            }
+
+            Text(transcriptsFolderPath)
+                .font(.caption)
+                .foregroundStyle(theme.secondaryTextColor)
+                .textSelection(.enabled)
+                .accessibilityLabel("Transcripts are saved to \(transcriptsFolderPath)")
         } header: {
             SectionHeader(
                 title: "Meeting",
@@ -410,6 +431,24 @@ struct SettingsView: View {
                 tint: .indigo
             )
         }
+    }
+
+    // MARK: - Transcripts Folder
+
+    /// Home-abbreviated path to the folder where meeting transcripts are saved.
+    private var transcriptsFolderPath: String {
+        let path = TranscriptStore.directory.path(percentEncoded: false)
+        let home = FileManager.default.homeDirectoryForCurrentUser.path(percentEncoded: false)
+        guard path.hasPrefix(home) else { return path }
+        return "~" + path.dropFirst(home.count)
+    }
+
+    /// Reveals the transcripts folder in Finder, creating it first if no meeting
+    /// has been saved yet so the button never opens a missing directory.
+    private func openTranscriptsFolder() {
+        let dir = TranscriptStore.directory
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        openURL(dir)
     }
 
     // MARK: - General Section

@@ -76,7 +76,13 @@ define check-version
 		{ echo "Error: VERSION '$(VERSION)' is not a valid version (expected e.g. 1.2.3 or 0.0.1-test)"; exit 1; }
 endef
 
-.PHONY: help test bump-build archive upload notarize pkg pkg-release brew-release release brew-clean list-downloads clean-downloads list-container list-prefs clean-prefs reset-permissions reset-login-item reset-onboarding _setup-api-key _cleanup-api-key _commit-and-tag _generate-cask
+# Website deployment to stormacq.net/wispr
+S3_BUCKET    := s3://stormacq.net
+S3_PREFIX    := wispr
+AWS_PROFILE  := default
+WEBSITE_DIR  := $(CURDIR)/website
+
+.PHONY: help test bump-build archive upload notarize pkg pkg-release brew-release release brew-clean deploy-website list-downloads clean-downloads list-container list-prefs clean-prefs reset-permissions reset-login-item reset-onboarding _setup-api-key _cleanup-api-key _commit-and-tag _generate-cask
 
 _setup-api-key:
 	@test -f "$(SECRETS_JSON)" || { echo "Error: $(SECRETS_JSON) not found"; exit 1; }
@@ -367,6 +373,16 @@ release: ## Release BOTH .pkg and Homebrew cask under one version (usage: make r
 	}
 	@$(MAKE) _generate-cask VERSION=$(VERSION)
 	@echo "✅ Release $(VERSION) complete: .pkg + Homebrew cask under $(TAG)"
+
+deploy-website: ## Sync website/ to s3://stormacq.net/wispr/
+	@echo "🌐 Deploying website to $(S3_BUCKET)/$(S3_PREFIX)/…"
+	@aws s3 sync "$(WEBSITE_DIR)" "$(S3_BUCKET)/$(S3_PREFIX)/" \
+		--profile $(AWS_PROFILE) \
+		--delete \
+		--exclude "CNAME" \
+		--exclude "README.md" \
+		--exclude "create_og_base.svg"
+	@echo "✅ Website deployed to https://stormacq.net/wispr/"
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \

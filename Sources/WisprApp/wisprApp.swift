@@ -101,6 +101,9 @@ final class WisprAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     /// Speaker diarization engine for the meeting "Others" track.
     let meetingDiarizer = MeetingDiarizer()
 
+    /// Browsing state for past meeting transcripts (the window's history sidebar).
+    let meetingHistoryStore = MeetingHistoryStore()
+
     /// Central state coordinator — depends on all services above.
     private(set) var stateManager: StateManager?
 
@@ -163,6 +166,11 @@ final class WisprAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         permissionManager.openURLHandler = { url in
             NSWorkspace.shared.open(url)
         }
+
+        // Open the sandbox scope for a user-chosen transcripts folder before
+        // anything can read or write transcripts. Must happen before the meeting
+        // services below, which resolve `TranscriptStore.directory`.
+        TranscriptLocation.applyStoredFolder(from: settingsStore)
 
         // Build the StateManager with all injected dependencies
         let sm = StateManager(
@@ -251,7 +259,8 @@ final class WisprAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         meetingPanel = MeetingWindowPanel(
             meetingStateManager: msm,
             settingsStore: settingsStore,
-            themeEngine: themeEngine
+            themeEngine: themeEngine,
+            historyStore: meetingHistoryStore
         )
 
         // Register the persisted hotkey (Req 1.3)
@@ -349,7 +358,9 @@ final class WisprAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         permissionMonitoringTask?.cancel()
         updateCheckTask?.cancel()
 
-        // Stop any active meeting session (synchronous — cascades via task group)
+        // Persist any in-progress meeting BEFORE cancelling its task group, so a
+        // session left running with the window closed is not lost on quit.
+        meetingStateManager?.finalizeForTermination()
         meetingStateManager?.cancelRecording()
 
         // Stop meeting detection monitoring.

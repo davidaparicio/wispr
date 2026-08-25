@@ -231,7 +231,7 @@ struct MeetingEchoSuppressionTests {
 // MARK: - MeetingStateManager Tests
 
 @MainActor
-@Suite("MeetingStateManager Tests", .serialized)
+@Suite("MeetingStateManager Tests", .serialized, .transcriptDirectoryIsolated)
 struct MeetingStateManagerTests {
 
     // MARK: - Initial State
@@ -247,6 +247,49 @@ struct MeetingStateManagerTests {
         #expect(manager.errorMessage == nil)
         #expect(manager.isWindowVisible == false)
         #expect(manager.elapsedTime == "0:00")
+    }
+
+    // MARK: - Termination Safety
+
+    @Test("finalizeForTermination is a no-op when idle")
+    func testFinalizeForTerminationWhenIdle() {
+        let manager = createTestMeetingStateManager()
+        #expect(manager.meetingState == .idle)
+
+        // Must not throw, must not change state, and must not write a file for a
+        // session that was never recording.
+        manager.finalizeForTermination()
+
+        #expect(manager.meetingState == .idle)
+    }
+
+    @Test("finalizeForTermination persists an in-progress transcript and clears state")
+    func testFinalizeForTerminationSavesInProgress() throws {
+        let manager = createTestMeetingStateManager()
+
+        // Simulate a meeting that is recording with content, as happens when the
+        // user closes the window and keeps talking before quitting the app.
+        manager.meetingState = .recording
+        manager.transcript.entries.append(
+            MeetingTranscriptEntry(speaker: .you, text: "quitting mid meeting")
+        )
+
+        manager.finalizeForTermination()
+
+        // The session is no longer considered live...
+        #expect(manager.meetingState == .idle)
+
+        // ...and its transcript landed on disk. Located by its content rather than by
+        // diffing the directory: the suites share one real transcripts folder, so a
+        // diff both mis-counts and — when used to clean up — deletes files another
+        // suite is still using. Start time cannot be used as the key either, since
+        // ISO-8601 encoding drops the sub-second part on the way to disk.
+        let saved = try #require(
+            TranscriptStore.list().first { $0.preview == "quitting mid meeting" })
+        defer { try? TranscriptStore.delete(saved.url) }
+
+        #expect(FileManager.default.fileExists(atPath: saved.url.path))
+        #expect(try TranscriptStore.load(saved.url).entries.map(\.text) == ["quitting mid meeting"])
     }
 
     // MARK: - Start Meeting

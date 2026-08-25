@@ -39,6 +39,12 @@ final class MeetingStateManager {
     /// The live transcript being built.
     var transcript: MeetingTranscript = MeetingTranscript()
 
+    /// URL of the session saved by the most recent `stopMeeting()`, or `nil`
+    /// when the last meeting was empty (nothing written). The window reads this
+    /// to jump to the freshly archived transcript instead of leaving the user on
+    /// an empty "Current Session".
+    var lastSavedURL: URL?
+
     /// Audio level from microphone (0.0–1.0) for UI visualization.
     var micLevel: Float = 0
 
@@ -69,6 +75,13 @@ final class MeetingStateManager {
 
     /// Whether diarization is active for the current session (set at startMeeting).
     private var diarizationActive = false
+
+    /// Guards against a second save while `stopMeeting()` is suspended.
+    ///
+    /// `stopMeeting()` awaits before it flips `meetingState` to `.idle`, so a quit
+    /// during that window would let `finalizeForTermination()` see a still-recording
+    /// session and write a second file.
+    private var isStopping = false
 
     /// Guards against re-entrant `startMeeting()` while capture is being set up
     /// (the window between the first `await` and `meetingState = .recording`).
@@ -153,7 +166,9 @@ final class MeetingStateManager {
 
     /// Stops the meeting and finalizes the transcript.
     func stopMeeting() async {
-        guard meetingState == .recording else { return }
+        guard meetingState == .recording, !isStopping else { return }
+        isStopping = true
+        defer { isStopping = false }
 
         Log.stateManager.debug("MeetingStateManager — stopping meeting")
 
@@ -169,13 +184,49 @@ final class MeetingStateManager {
         await meetingDiarizer?.reset()
         diarizationActive = false
 
-        // Persist the completed session to disk before it can be overwritten
-        // by a subsequent startMeeting() (which resets `transcript`).
-        TranscriptStore.save(transcript)
+        // Persist the completed session to disk before it can be overwritten by a
+        // subsequent startMeeting() (which resets `transcript`). Encoding and
+        // writing happen off the main actor, but are awaited so the save is
+        // guaranteed to complete before `transcript` can be replaced.
+        let completed = transcript
+        let savedURL = await Task.detached { TranscriptStore.save(completed) }.value
+
+        // Return "Current Session" to an empty slate: the finished meeting is now
+        // on disk and shown from history, so keeping its text in the live view
+        // only duplicates the freshly archived row and confuses "what's live".
+        transcript = MeetingTranscript()
+        lastSavedURL = savedURL
 
         meetingState = .idle
         micLevel = 0
         systemLevel = 0
+    }
+
+    /// Persists an in-progress meeting synchronously, for use on app termination.
+    ///
+    /// `stopMeeting()` cannot be used from `applicationWillTerminate` because it
+    /// is `async` and the app is torn down before the suspension resumes. This
+    /// writes the transcript first and only then cancels the task group, so a
+    /// meeting left running in the background — the window closed while
+    /// recording continues — is never silently lost.
+    ///
+    /// Saving is silent by design: no prompt, no UI. Empty transcripts are
+    /// skipped by `TranscriptStore.save`.
+    func finalizeForTermination() {
+        // `isStopping` means stopMeeting() is mid-flight and will save itself; it
+        // has not yet flipped `meetingState`, so the state check alone would let
+        // both write a file.
+        guard meetingState == .recording, !isStopping else { return }
+
+        let entryCount = transcript.entries.count
+        Log.stateManager.debug(
+            "MeetingStateManager — finalizing in-progress meeting on termination (\(entryCount) entries)"
+        )
+        TranscriptStore.save(transcript)
+
+        recordingTask?.cancel()
+        recordingTask = nil
+        meetingState = .idle
     }
 
     /// Toggles between recording and stopped states.
@@ -189,6 +240,19 @@ final class MeetingStateManager {
             meetingState = .idle
             errorMessage = nil
         }
+    }
+
+    /// Renames a diarized speaker in the live transcript.
+    ///
+    /// Mutates in place rather than writing back a snapshot: the transcription
+    /// tasks append entries concurrently, so assigning a copy taken before an
+    /// `await` would silently drop everything that arrived in between.
+    ///
+    /// Names resolve at display time, so this relabels all of the speaker's
+    /// existing entries and every future one. Persistence happens at
+    /// `stopMeeting()`, which saves the transcript including its names.
+    func renameSpeaker(index: Int, to name: String?) {
+        transcript.setName(name, forSpeakerIndex: index)
     }
 
     /// Copies the transcript to the clipboard.

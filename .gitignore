@@ -7,6 +7,7 @@
 # Xcode build artifacts
 build/
 DerivedData/
+.xcbuild/
 *.profraw
 
 # Swift Package Manager
@@ -20,3 +21,6 @@ private_keys
 # Editor/agent local config
 .rules
 .agents/
+
+# Local agent planning notes (kept out of the shared repo)
+tasks/

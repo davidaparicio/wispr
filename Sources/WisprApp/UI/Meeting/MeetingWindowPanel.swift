@@ -22,33 +22,70 @@ final class MeetingWindowPanel: NSObject, NSWindowDelegate {
     private let meetingStateManager: MeetingStateManager
     private let settingsStore: SettingsStore
     private let themeEngine: UIThemeEngine
+    private let historyStore: MeetingHistoryStore
 
     /// Whether the panel is currently visible.
     private(set) var isVisible = false
+
+    /// Whether the panel has been shown at least once this launch. Guards the
+    /// default corner placement so reopening never overrides a position the user
+    /// chose themselves.
+    private var hasBeenShown = false
+
+    /// Key under which AppKit autosaves this window's frame.
+    private static let frameAutosaveName = "MeetingTranscriptionWindow"
+
+    /// Whether AppKit has a stored frame for this window.
+    ///
+    /// Assigning `setFrameAutosaveName` restores a saved frame over the
+    /// `contentRect` passed at construction, so the default corner placement must
+    /// only be applied when nothing was stored. Checked explicitly rather than
+    /// inferred from the frame, since a freshly-created window's origin is not
+    /// guaranteed to be exactly `.zero`.
+    private static var hasAutosavedFrame: Bool {
+        UserDefaults.standard.object(forKey: "NSWindow Frame \(frameAutosaveName)") != nil
+    }
 
     // MARK: - Initialization
 
     init(
         meetingStateManager: MeetingStateManager,
         settingsStore: SettingsStore,
-        themeEngine: UIThemeEngine
+        themeEngine: UIThemeEngine,
+        historyStore: MeetingHistoryStore
     ) {
         self.meetingStateManager = meetingStateManager
         self.settingsStore = settingsStore
         self.themeEngine = themeEngine
+        self.historyStore = historyStore
     }
 
     // MARK: - Panel Lifecycle
 
-    /// Shows the meeting window.
+    /// Shows the meeting window, or brings it to the front if already open.
+    ///
+    /// Being already visible is not a no-op: the panel can be buried behind a
+    /// fullscreen application, so a menu click must still raise it. This mirrors
+    /// the already-visible handling in `MenuBarController.openSettings()`.
     func show() {
         if panel == nil {
             createPanel()
         }
 
-        guard let panel, !isVisible else { return }
+        guard let panel else { return }
 
-        positionPanel(panel)
+        if isVisible {
+            panel.makeKeyAndOrderFront(nil)
+            panel.orderFrontRegardless()
+            return
+        }
+
+        // Place the panel only on first show; afterwards the autosaved frame set
+        // in createPanel() restores the user's own position and size.
+        if !hasBeenShown {
+            positionPanel(panel)
+            hasBeenShown = true
+        }
         panel.makeKeyAndOrderFront(nil)
         panel.orderFrontRegardless()
         isVisible = true
@@ -68,11 +105,13 @@ final class MeetingWindowPanel: NSObject, NSWindowDelegate {
             .environment(meetingStateManager)
             .environment(settingsStore)
             .environment(themeEngine)
+            .environment(historyStore)
 
         let hostingView = NSHostingView(rootView: transcriptView)
 
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 520),
+            // Wide enough for the history sidebar plus a readable transcript.
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
             styleMask: [.titled, .closable, .resizable, .nonactivatingPanel, .utilityWindow],
             backing: .buffered,
             defer: false
@@ -87,9 +126,14 @@ final class MeetingWindowPanel: NSObject, NSWindowDelegate {
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = hostingView
-        panel.minSize = NSSize(width: 320, height: 300)
+        // Matches the content's declared minimum. The transcript rows spend
+        // ~154pt on the timestamp and speaker columns before any text, so a
+        // narrower window leaves nothing readable beside the sidebar.
+        panel.minSize = NSSize(width: 620, height: 420)
         panel.isReleasedWhenClosed = false
         panel.delegate = self
+        // Persist position and size across close/reopen and across launches.
+        panel.setFrameAutosaveName(Self.frameAutosaveName)
 
         self.panel = panel
     }
@@ -106,8 +150,10 @@ final class MeetingWindowPanel: NSObject, NSWindowDelegate {
 
     // MARK: - Positioning
 
+    /// Places the panel in the bottom-right corner, for the first launch only.
     private func positionPanel(_ panel: NSPanel) {
-        guard let screen = NSScreen.main else { return }
+        // A restored autosaved frame already carries the user's own placement.
+        guard !Self.hasAutosavedFrame, let screen = NSScreen.main else { return }
         let screenFrame = screen.visibleFrame
         let panelSize = panel.frame.size
 

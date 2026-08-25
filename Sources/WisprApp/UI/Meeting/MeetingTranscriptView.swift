@@ -31,6 +31,11 @@ struct MeetingTranscriptView: View {
     /// Drives keyboard focus into the rename field the moment it appears, so the
     /// user can type immediately instead of having to click the field first.
     @FocusState private var speakerFieldFocused: Bool
+    /// Whether the history column is shown. Plain view state rather than a
+    /// `NavigationSplitView` column binding: this window is a utility `NSPanel`
+    /// with no `NSToolbar`, so the split view's own chrome cannot render into a
+    /// title bar and lands in the content area instead.
+    @State private var showHistory = true
 
     // MARK: - Displayed transcript
 
@@ -46,32 +51,14 @@ struct MeetingTranscriptView: View {
     private var isArchived: Bool { history.isShowingArchived }
 
     var body: some View {
-        NavigationSplitView {
-            MeetingHistorySidebar()
-                .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 280)
-        } detail: {
-            detailPane
-        }
-        // Start/Stop lives in the toolbar, next to the sidebar-collapse button,
-        // so it stays reachable from anywhere (live or archived) at the very top.
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button {
-                    Task { await meetingState.toggleMeeting() }
-                } label: {
-                    Label(
-                        meetingState.meetingState == .recording ? "Stop" : "Start Meeting",
-                        systemImage: meetingState.meetingState == .recording
-                            ? SFSymbols.stopFill
-                            : SFSymbols.recordingMicrophone
-                    )
-                    .labelStyle(.titleAndIcon)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(meetingState.meetingState == .recording ? .red : theme.accentColor)
-                .accessibilityLabel(
-                    meetingState.meetingState == .recording ? "Stop meeting" : "Start meeting")
+        HStack(spacing: 0) {
+            if showHistory {
+                MeetingHistorySidebar()
+                    .frame(minWidth: 190, idealWidth: 210, maxWidth: 280)
+                Divider()
             }
+
+            detailPane
         }
         // Sized for sidebar + transcript: the rows spend ~154pt on the timestamp
         // and speaker columns before any text, so a narrower window leaves the
@@ -91,20 +78,13 @@ struct MeetingTranscriptView: View {
 
     private var detailPane: some View {
         VStack(spacing: 0) {
-            if showsHeader {
-                headerBar
-            }
+            headerBar
 
             if let message = history.errorMessage {
                 errorBanner(message)
             }
 
-            // Only draw the top divider when something sits above it; otherwise
-            // an idle "Current Session" would show an empty bar and stray rule
-            // now that Start/Stop lives in the toolbar.
-            if showsHeader || history.errorMessage != nil {
-                Divider()
-            }
+            Divider()
 
             if transcript.entries.isEmpty {
                 emptyState
@@ -121,10 +101,6 @@ struct MeetingTranscriptView: View {
     /// The header shows the archived session's title or the live recording
     /// indicators; when the live session is idle it has nothing to show, so it
     /// (and its divider) are hidden rather than left as an empty bar.
-    private var showsHeader: Bool {
-        isArchived || meetingState.meetingState == .recording
-    }
-
     private var exportFilename: String {
         guard isArchived else { return "meeting-transcript" }
         let stamp = MeetingTranscript.formatTime(transcript.startTime)
@@ -159,6 +135,51 @@ struct MeetingTranscriptView: View {
 
     private var headerBar: some View {
         HStack(spacing: 12) {
+            // History toggle, first in the row so it holds one position whether
+            // the sidebar is open or closed.
+            Button {
+                showHistory.toggle()
+            } label: {
+                Image(systemName: "sidebar.left")
+                    .font(.body)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(showHistory ? theme.accentColor.opacity(0.15) : Color.clear)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .help(showHistory ? "Hide transcript history" : "Show transcript history")
+            .accessibilityLabel("Toggle transcript history")
+
+            // Start/Stop sits in the header rather than the transcript body, so
+            // it stays reachable while an archived session is on screen.
+            Button {
+                Task { await meetingState.toggleMeeting() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(
+                        systemName: meetingState.meetingState == .recording
+                            ? SFSymbols.stopFill
+                            : SFSymbols.recordingMicrophone
+                    )
+                    .font(.body)
+
+                    Text(meetingState.meetingState == .recording ? "Stop" : "Start Meeting")
+                        .font(.callout.weight(.medium))
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    meetingState.meetingState == .recording
+                        ? Color.red.opacity(0.15)
+                        : theme.accentColor.opacity(0.15)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(
+                meetingState.meetingState == .recording ? "Stop meeting" : "Start meeting")
+
             if isArchived {
                 archivedHeaderContent
             } else {

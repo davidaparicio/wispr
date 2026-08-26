@@ -353,6 +353,13 @@ release: ## Release BOTH .pkg and Homebrew cask under one version (usage: make r
 	$(check-version)
 	@test -d "../homebrew-macos" || { echo "Error: ../homebrew-macos not found"; exit 1; }
 	@command -v gh >/dev/null || { echo "Error: gh CLI not installed"; exit 1; }
+	@echo "🔄 Checking local branch is up-to-date with origin…"
+	@git fetch origin
+	@if [ "$$(git rev-parse HEAD)" != "$$(git rev-parse origin/main)" ]; then \
+		echo "Error: Local branch is behind or has diverged from origin/main."; \
+		echo "       Run 'git pull --rebase' before releasing."; \
+		exit 1; \
+	fi
 	$(eval TAG := v$(VERSION))
 	$(eval ZIP_NAME := wispr-$(VERSION).zip)
 	@echo "📝 Setting version to $(VERSION)…"

@@ -136,6 +136,21 @@ struct MenuBarControllerIconTests {
 @Suite("MenuBarController Menu Structure Tests")
 struct MenuBarControllerMenuTests {
 
+    @Test("Recording item is disabled while processing")
+    func testRecordingItemDisabledWhileProcessing() {
+        let (controller, stateManager, _, _) = createTestController()
+        stateManager.appState = .processing
+
+        controller.updateRecordingMenuItem()
+        controller.menu.update()
+
+        #expect(
+            !controller.recordingMenuItem.isEnabled,
+            "Recording item should remain disabled while transcription is processing"
+        )
+        controller.stopObserving()
+    }
+
     @Test("Menu contains recording, language, settings, model management, and quit items")
     func testMenuItemCount() {
         let (controller, _, _, _) = createTestController()

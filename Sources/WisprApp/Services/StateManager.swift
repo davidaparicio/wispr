@@ -227,7 +227,8 @@ final class StateManager {
 
                 self.soundFeedback.play(.recordingStopped)
 
-                await self.insertTranscribedText(finalResult.text)
+                await self.insertTranscribedText(
+                    finalResult.text, detectedLanguage: finalResult.detectedLanguage)
             } catch {
                 guard !Task.isCancelled else { return }
                 Log.stateManager.warning("EOU monitoring failed: \(error.localizedDescription)")
@@ -247,6 +248,26 @@ final class StateManager {
     func applyFillerWordRemoval(to text: String) -> String {
         guard settingsStore.removeFillerWords, !text.isEmpty else { return text }
         return FillerWordCleaner.clean(text)
+    }
+
+    // MARK: - Custom Vocabulary Correction
+
+    /// Corrects mis-transcribed proper nouns against the user's custom vocabulary
+    /// when the setting is enabled and the list is non-empty.
+    ///
+    /// The language used for phonetic matching is the configured one when pinned
+    /// or specific. In auto-detect mode it uses an engine-reported language when
+    /// available; engines such as Parakeet that do not report one use the
+    /// corrector's English fallback.
+    func applyVocabularyCorrection(to text: String, detectedLanguage: String? = nil) -> String {
+        guard settingsStore.customVocabularyEnabled,
+              !settingsStore.customVocabulary.isEmpty,
+              !text.isEmpty else { return text }
+        return VocabularyCorrector.correct(
+            text,
+            vocabulary: settingsStore.customVocabulary,
+            languageCode: settingsStore.languageMode.languageCode ?? detectedLanguage
+        )
     }
 
     // MARK: - AI Text Correction
@@ -301,7 +322,7 @@ final class StateManager {
     /// Called by both `endRecording()` and the EOU handler to avoid duplication.
     ///
     /// **Validates**: Requirements 3.1, 3.2, 3.3, 3.4, 4.1, 4.3, 4.4, 5.6, 5.7, 5.9
-    func insertTranscribedText(_ text: String) async {
+    func insertTranscribedText(_ text: String, detectedLanguage: String? = nil) async {
         guard !text.isEmpty else {
             await resetToIdle()
             return
@@ -318,7 +339,11 @@ final class StateManager {
         // AI text correction step (after filler removal, before suffix)
         let corrected = await applyAITextCorrection(to: cleaned)
 
-        let finalText = applyAutoSuffix(to: corrected)
+        // Custom vocabulary correction — runs after AI correction so it has the
+        // final say on the spelling of known proper nouns.
+        let vocabCorrected = applyVocabularyCorrection(to: corrected, detectedLanguage: detectedLanguage)
+
+        let finalText = applyAutoSuffix(to: vocabCorrected)
 
         do {
             try await textInsertionService.insertText(finalText)
@@ -497,7 +522,7 @@ final class StateManager {
             Log.stateManager.debug("endRecording — transcription: \"\(preview, privacy: .private)\" (len=\(result.text.count))")
             #endif
 
-            await insertTranscribedText(result.text)
+            await insertTranscribedText(result.text, detectedLanguage: result.detectedLanguage)
 
         } catch WisprError.emptyTranscription {
             // Requirement 3.4: Empty transcription — notify user and return to idle
